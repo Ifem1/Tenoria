@@ -2,12 +2,14 @@
 import Link from "next/link";
 import { useWallet, connectMetaMask } from "@/lib/wallet/store";
 import { shortAddr } from "@/lib/utils/ids";
+import { useIsKeeperOrOwner } from "@/lib/genlayer/hooks";
 
 const OWNER = "0xE3A26A71b2B26aC623A1F1447D28afc6cac0Fb9c".toLowerCase();
 
 export function TopNavigation() {
   const { address, setAddress, disconnect } = useWallet();
   const isOwner = !!address && address.toLowerCase() === OWNER;
+  const isKeeperOrOwner = useIsKeeperOrOwner(address);
 
   async function onConnect() {
     try {
@@ -26,7 +28,9 @@ export function TopNavigation() {
         <nav className="flex gap-6 text-sm">
           <Link href="/dashboard" className="text-aubergine hover:text-mauve">Dashboard</Link>
           <Link href="/open-complaint" className="text-aubergine hover:text-mauve">Open Complaint</Link>
-          <Link href="/keeper" className="text-aubergine hover:text-mauve">Keeper</Link>
+          {isKeeperOrOwner && (
+            <Link href="/keeper" className="text-aubergine hover:text-mauve">Keeper</Link>
+          )}
           {isOwner && (
             <Link href="/TenAdmin" className="text-aubergine hover:text-mauve">Operations</Link>
           )}
