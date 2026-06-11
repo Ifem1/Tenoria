@@ -5,6 +5,50 @@
 from genlayer import *
 import json
 
+# Explicit import — `from genlayer import *` doesn't always re-export VmUserError
+# (varies by SDK version). Without this, raising VmUserError inside an except
+# clause crashes with NameError and the real error is masked.
+try:
+    from genlayer.errors import VmUserError  # newer SDKs
+except Exception:
+    try:
+        from genlayer.vm import UserError as VmUserError  # older SDKs
+    except Exception:
+        try:
+            from genlayer import VmUserError  # some builds expose it at top level
+        except Exception:
+            class VmUserError(Exception):  # last-resort fallback
+                pass
+
+
+def _safe_json_load(raw):
+    """Parse JSON from an LLM-produced string, tolerating common envelope quirks
+    (leading/trailing whitespace, ```json ... ``` fences, stray text before/after
+    the object). Raises ValueError if no JSON object can be extracted."""
+    if raw is None:
+        raise ValueError("empty output")
+    s = str(raw).strip()
+    if not s:
+        raise ValueError("empty output")
+    if s.startswith("```"):
+        # strip opening fence (```json or ```)
+        nl = s.find("\n")
+        if nl != -1:
+            s = s[nl + 1:]
+        if s.endswith("```"):
+            s = s[:-3]
+        s = s.strip()
+    try:
+        return json.loads(s)
+    except Exception:
+        # fall through to bracket-scan
+        pass
+    start = s.find("{")
+    end = s.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("no JSON object found")
+    return json.loads(s[start:end + 1])
+
 
 ALLOWED_RULINGS = {
     "ACTIONABLE",
@@ -26,6 +70,13 @@ ALLOWED_RECONSIDERATION = {
     "ESCALATE_TO_HUMAN_MEDIATION",
     "RECONSIDERATION_REJECTED",
 }
+
+
+def _k(addr) -> str:
+    """Canonical lowercase hex key for any Address-ish value.
+    str(Address) is stable across SDK versions where .as_hex isn't, and
+    lower() removes checksum-case drift between store and lookup."""
+    return str(addr).lower()
 
 
 class Tenoria(gl.Contract):
@@ -56,7 +107,7 @@ class Tenoria(gl.Contract):
         self.evidence_count = u256(0)
         self.review_count = u256(0)
         self.reconsideration_count = u256(0)
-        self.keepers[self.owner.as_hex] = "OWNER"
+        self.keepers[_k(self.owner)] = "OWNER"
         self.protocol_stats["created_at"] = str(gl.message.timestamp if hasattr(gl.message, "timestamp") else 0)
 
     # ---------- helpers ----------
@@ -65,11 +116,11 @@ class Tenoria(gl.Contract):
             raise VmUserError("Protocol is paused")
 
     def _require_owner(self):
-        if gl.message.sender_address != self.owner:
+        if _k(gl.message.sender_address) != _k(self.owner):
             raise VmUserError("Only owner")
 
-    def _is_keeper(self, addr: Address) -> bool:
-        return addr.as_hex in self.keepers
+    def _is_keeper(self, addr) -> bool:
+        return self.keepers.get(_k(addr)) is not None
 
     def _require_keeper(self):
         if not self._is_keeper(gl.message.sender_address):
@@ -115,7 +166,7 @@ class Tenoria(gl.Contract):
             data = json.loads(case_json)
         except Exception:
             raise VmUserError("Invalid case JSON")
-        sender_hex = gl.message.sender_address.as_hex
+        sender_hex = _k(gl.message.sender_address)
         data["id"] = case_id
         data["tenantWallet"] = sender_hex
         data["status"] = "AWAITING_LANDLORD_RESPONSE"
@@ -132,7 +183,7 @@ class Tenoria(gl.Contract):
     def submit_landlord_response(self, case_id: str, response_json: str) -> None:
         self._require_not_paused()
         c = self._get_case(case_id)
-        sender_hex = gl.message.sender_address.as_hex
+        sender_hex = _k(gl.message.sender_address)
         if sender_hex.lower() != str(c.get("landlordWallet", "")).lower():
             raise VmUserError("Only named landlord may respond")
         try:
@@ -150,13 +201,13 @@ class Tenoria(gl.Contract):
     def add_evidence(self, evidence_id: str, case_id: str, evidence_json: str) -> None:
         self._require_not_paused()
         c = self._get_case(case_id)
-        sender_hex = gl.message.sender_address.as_hex
+        sender_hex = _k(gl.message.sender_address)
         allowed = {
             str(c.get("tenantWallet", "")).lower(),
             str(c.get("landlordWallet", "")).lower(),
             str(c.get("assignedKeeper", "")).lower(),
         }
-        if sender_hex.lower() not in allowed and not self._is_keeper(gl.message.sender_address) and gl.message.sender_address != self.owner:
+        if sender_hex not in allowed and not self._is_keeper(gl.message.sender_address) and _k(gl.message.sender_address) != _k(self.owner):
             raise VmUserError("Not authorised to add evidence")
         try:
             ev = json.loads(evidence_json)
@@ -198,12 +249,12 @@ class Tenoria(gl.Contract):
         c = self._get_case(case_id)
         if not self._is_keeper(keeper):
             raise VmUserError("Address is not a keeper")
-        c["assignedKeeper"] = keeper.as_hex
+        c["assignedKeeper"] = _k(keeper)
         self._save_case(case_id, c)
-        self.case_assignments[case_id] = keeper.as_hex
+        self.case_assignments[case_id] = _k(keeper)
 
     def _require_owner_or_admin(self):
-        if gl.message.sender_address != self.owner:
+        if _k(gl.message.sender_address) != _k(self.owner):
             raise VmUserError("Only owner/admin")
 
     @gl.public.write
@@ -227,7 +278,7 @@ class Tenoria(gl.Contract):
     def open_reconsideration(self, reconsideration_id: str, case_id: str, reconsideration_json: str) -> None:
         self._require_not_paused()
         c = self._get_case(case_id)
-        sender_hex = gl.message.sender_address.as_hex
+        sender_hex = _k(gl.message.sender_address)
         if sender_hex.lower() not in (str(c.get("tenantWallet", "")).lower(), str(c.get("landlordWallet", "")).lower()):
             raise VmUserError("Only parties may request reconsideration")
         try:
@@ -251,13 +302,14 @@ class Tenoria(gl.Contract):
     @gl.public.write
     def add_keeper(self, keeper: Address) -> None:
         self._require_owner_or_admin()
-        self.keepers[keeper.as_hex] = "KEEPER"
+        self.keepers[_k(keeper)] = "KEEPER"
 
     @gl.public.write
     def remove_keeper(self, keeper: Address) -> None:
         self._require_owner_or_admin()
-        if keeper.as_hex in self.keepers:
-            del self.keepers[keeper.as_hex]
+        key = _k(keeper)
+        if self.keepers.get(key) is not None:
+            del self.keepers[key]
 
     @gl.public.write
     def pause_protocol(self) -> None:
@@ -378,18 +430,59 @@ Allowed landlord_response_quality: COMPLETE | PARTIAL | WEAK | MISSING | CONTRAD
         prompt = self._build_review_prompt(c, resp, evidence_arr, policy_arr, timeline)
 
         def _run() -> str:
-            res = gl.nondet.exec_prompt(prompt)
-            return res
+            return gl.nondet.exec_prompt(prompt)
 
-        raw_output = gl.eq_principle.prompt_comparative(
+        raw_output = gl.eq_principle.prompt_non_comparative(
             _run,
-            "Compare ruling, scores (within 10 points), urgency, lease_support, evidence_strength, and the recommended_next_action — they should be substantively equivalent."
+            task=(
+                "Review the tenant complaint, landlord response, lease policy notes, "
+                "evidence, and timeline. Decide credibility, actionability, urgency, "
+                "lease support, evidence strength, landlord response quality, and the "
+                "single recommended next action. Return strict JSON only."
+            ),
+            criteria=(
+                "EQUIVALENCE RULE for two candidate outputs A and B. "
+                "Accept A and B as EQUIVALENT (return true) whenever ALL of the "
+                "following hold; otherwise return false:\n"
+                "1. Both parse as JSON objects.\n"
+                "2. Both contain every key in: ruling, credibility_score, "
+                "actionability_score, confidence, urgency, lease_support, "
+                "evidence_strength, landlord_response_quality, "
+                "recommended_next_action, required_actions, findings, red_flags, "
+                "missing_information, reasoning_summary.\n"
+                "3. A.ruling == B.ruling AND both are one of: ACTIONABLE, "
+                "PARTIALLY_ACTIONABLE, NEEDS_MORE_EVIDENCE, NOT_ACTIONABLE, "
+                "LANDLORD_RESPONSE_REQUIRED, ESCALATE_TO_MEDIATION, "
+                "URGENT_ESCALATION.\n"
+                "4. A.urgency == B.urgency AND both are one of: LOW, MEDIUM, HIGH, "
+                "CRITICAL.\n"
+                "5. A.lease_support == B.lease_support AND both are one of: "
+                "STRONG, PARTIAL, WEAK, NONE, UNCLEAR.\n"
+                "6. A.evidence_strength == B.evidence_strength AND both are one of: "
+                "STRONG, MODERATE, WEAK, INSUFFICIENT, CONFLICTING.\n"
+                "7. A.landlord_response_quality == B.landlord_response_quality AND "
+                "both are one of: COMPLETE, PARTIAL, WEAK, MISSING, CONTRADICTORY.\n"
+                "8. abs(A.credibility_score - B.credibility_score) <= 25 AND both "
+                "are integers in [0, 100].\n"
+                "9. abs(A.actionability_score - B.actionability_score) <= 25 AND "
+                "both are integers in [0, 100].\n"
+                "10. abs(A.confidence - B.confidence) <= 25 AND both are integers "
+                "in [0, 100].\n"
+                "11. required_actions, findings, red_flags, missing_information "
+                "are JSON arrays in BOTH (contents may differ in wording, count, "
+                "and order — DO NOT compare element values).\n"
+                "12. recommended_next_action and reasoning_summary are non-empty "
+                "strings in BOTH (DO NOT compare wording — exact text WILL differ).\n"
+                "DO NOT require identical wording, identical element counts in arrays, "
+                "identical scores, or identical orderings. Natural LLM variance in "
+                "free-text fields and small numeric drift is EXPECTED and EQUIVALENT."
+            ),
         )
 
         try:
-            result = json.loads(raw_output)
-        except Exception:
-            raise VmUserError("Reviewer returned invalid JSON")
+            result = _safe_json_load(raw_output)
+        except Exception as e:
+            raise VmUserError("Reviewer returned invalid JSON: " + str(e)[:120])
 
         self._validate_review(result)
 
@@ -445,14 +538,48 @@ NOT_ACTIONABLE | LANDLORD_RESPONSE_REQUIRED | ESCALATE_TO_MEDIATION | URGENT_ESC
         def _run() -> str:
             return gl.nondet.exec_prompt(prompt)
 
-        raw = gl.eq_principle.prompt_comparative(
+        raw = gl.eq_principle.prompt_non_comparative(
             _run,
-            "Compare reconsideration_decision, new_ruling, and scores (within 10 points)."
+            task=(
+                "Decide whether the new evidence or argument materially changes the "
+                "original ruling. Return strict JSON only."
+            ),
+            criteria=(
+                "EQUIVALENCE RULE for two candidate outputs A and B. "
+                "Accept A and B as EQUIVALENT (return true) whenever ALL of the "
+                "following hold; otherwise return false:\n"
+                "1. Both parse as JSON objects.\n"
+                "2. Both contain every key in: reconsideration_decision, "
+                "new_ruling, new_credibility_score, new_actionability_score, "
+                "confidence, accepted_arguments, rejected_arguments, "
+                "reasoning_summary, final_recommendation.\n"
+                "3. A.reconsideration_decision == B.reconsideration_decision AND "
+                "both are one of: ORIGINAL_RULING_UPHELD, ORIGINAL_RULING_ADJUSTED, "
+                "MORE_EVIDENCE_REQUIRED, ESCALATE_TO_HUMAN_MEDIATION, "
+                "RECONSIDERATION_REJECTED.\n"
+                "4. A.new_ruling == B.new_ruling AND both are one of: ACTIONABLE, "
+                "PARTIALLY_ACTIONABLE, NEEDS_MORE_EVIDENCE, NOT_ACTIONABLE, "
+                "LANDLORD_RESPONSE_REQUIRED, ESCALATE_TO_MEDIATION, "
+                "URGENT_ESCALATION.\n"
+                "5. abs(A.new_credibility_score - B.new_credibility_score) <= 25 "
+                "AND both are integers in [0, 100].\n"
+                "6. abs(A.new_actionability_score - B.new_actionability_score) <= 25 "
+                "AND both are integers in [0, 100].\n"
+                "7. abs(A.confidence - B.confidence) <= 25 AND both are integers "
+                "in [0, 100].\n"
+                "8. accepted_arguments and rejected_arguments are JSON arrays in "
+                "BOTH (contents and order may differ — DO NOT compare element "
+                "values).\n"
+                "9. reasoning_summary and final_recommendation are non-empty "
+                "strings in BOTH (DO NOT compare wording — exact text WILL differ).\n"
+                "DO NOT require identical wording, identical scores, or identical "
+                "array contents. Natural LLM variance is EXPECTED and EQUIVALENT."
+            ),
         )
         try:
-            result = json.loads(raw)
-        except Exception:
-            raise VmUserError("Reviewer returned invalid JSON")
+            result = _safe_json_load(raw)
+        except Exception as e:
+            raise VmUserError("Reviewer returned invalid JSON: " + str(e)[:120])
         if result.get("reconsideration_decision") not in ALLOWED_RECONSIDERATION:
             raise VmUserError("Invalid reconsideration_decision")
         if result.get("new_ruling") not in ALLOWED_RULINGS:
@@ -485,11 +612,28 @@ CASE: {json.dumps(c)}
 """
         def _run() -> str:
             return gl.nondet.exec_prompt(prompt)
-        raw = gl.eq_principle.prompt_comparative(_run, "applicability matches and explanation is substantively equivalent")
+        raw = gl.eq_principle.prompt_non_comparative(
+            _run,
+            task=f"Assess how lease clause type '{clause_type}' applies to the given tenant complaint. Return strict JSON only.",
+            criteria=(
+                "EQUIVALENCE RULE for two candidate outputs A and B. "
+                "Accept A and B as EQUIVALENT (return true) whenever ALL of the "
+                "following hold:\n"
+                "1. Both parse as JSON objects.\n"
+                "2. Both contain keys: clause_type, applicability, explanation.\n"
+                "3. A.applicability == B.applicability AND both are one of: "
+                "STRONG, PARTIAL, WEAK, NONE.\n"
+                "4. A.clause_type and B.clause_type are non-empty strings (need "
+                "not match exactly).\n"
+                "5. explanation is a non-empty string in BOTH (DO NOT compare "
+                "wording — exact text WILL differ).\n"
+                "Natural LLM variance in free-text fields is EXPECTED and EQUIVALENT."
+            ),
+        )
         try:
-            res = json.loads(raw)
-        except Exception:
-            raise VmUserError("Invalid JSON")
+            res = _safe_json_load(raw)
+        except Exception as e:
+            raise VmUserError("Reviewer returned invalid JSON: " + str(e)[:120])
         key = f"policy_assess:{case_id}:{clause_type}"
         self.lease_policy_notes[key] = json.dumps(res)
 
@@ -512,11 +656,27 @@ EVIDENCE: {json.dumps(evidence_arr)}
 """
         def _run() -> str:
             return gl.nondet.exec_prompt(prompt)
-        raw = gl.eq_principle.prompt_comparative(_run, "conflict items and summary substantively equivalent")
+        raw = gl.eq_principle.prompt_non_comparative(
+            _run,
+            task="Identify factual conflicts among the listed evidence items for this tenant complaint. Return strict JSON only.",
+            criteria=(
+                "EQUIVALENCE RULE for two candidate outputs A and B. "
+                "Accept A and B as EQUIVALENT (return true) whenever ALL of the "
+                "following hold:\n"
+                "1. Both parse as JSON objects.\n"
+                "2. Both contain keys: conflicts, summary.\n"
+                "3. conflicts is a JSON array in BOTH (may be empty; element "
+                "count and contents may differ — DO NOT compare elements).\n"
+                "4. summary is a non-empty string in BOTH (DO NOT compare wording "
+                "— exact text WILL differ).\n"
+                "Natural LLM variance in identified conflicts and summary wording "
+                "is EXPECTED and EQUIVALENT."
+            ),
+        )
         try:
-            res = json.loads(raw)
-        except Exception:
-            raise VmUserError("Invalid JSON")
+            res = _safe_json_load(raw)
+        except Exception as e:
+            raise VmUserError("Reviewer returned invalid JSON: " + str(e)[:120])
         self.case_evidence[f"conflicts:{case_id}"] = json.dumps(res)
 
     # ---------- views ----------
@@ -568,7 +728,7 @@ EVIDENCE: {json.dumps(evidence_arr)}
 
     @gl.public.view
     def get_user_cases(self, user: Address) -> str:
-        return self.user_cases.get(user.as_hex) or self.user_cases.get(user.as_hex.lower()) or "[]"
+        return self.user_cases.get(_k(user)) or "[]"
 
     @gl.public.view
     def get_keeper_queue(self, keeper: Address) -> str:
@@ -577,7 +737,7 @@ EVIDENCE: {json.dumps(evidence_arr)}
             raw = self.cases.get(cid_key)
             if not raw: continue
             c = json.loads(raw)
-            if c.get("assignedKeeper", "").lower() == keeper.as_hex.lower() or self._is_keeper(keeper):
+            if str(c.get("assignedKeeper", "")).lower() == _k(keeper) or self._is_keeper(keeper):
                 if c.get("status") in ("READY_FOR_KEEPER_CHECK", "AWAITING_LANDLORD_RESPONSE", "NEEDS_MORE_EVIDENCE"):
                     out.append(c)
         return json.dumps(out)
@@ -598,4 +758,4 @@ EVIDENCE: {json.dumps(evidence_arr)}
 
     @gl.public.view
     def get_owner(self) -> str:
-        return self.owner.as_hex
+        return _k(self.owner)

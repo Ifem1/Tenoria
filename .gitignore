@@ -2,6 +2,10 @@ node_modules
 .next
 .env
 .env.local
+tests/.env.test
+tests/.run/
 *.log
 .DS_Store
 __pycache__
+
+.vercel

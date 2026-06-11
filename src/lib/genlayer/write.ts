@@ -1,12 +1,13 @@
 "use client";
-import { getClient, CONTRACT_ADDRESS } from "./client";
+import { getWalletClient, CONTRACT_ADDRESS } from "./client";
 
 async function write(method: string, args: any[]): Promise<string> {
-  const c = await getClient();
+  const c = await getWalletClient();
   const hash: string = await c.writeContract({
     address: CONTRACT_ADDRESS,
     functionName: method,
     args,
+    value: 0n,
   });
   return hash;
 }
