@@ -1,27 +1,25 @@
 import type { ConsensusReview } from "@/types";
 import { QuietPanel } from "@/components/ui/QuietPanel";
 
-function Meter({ label, value }: { label: string; value: number }) {
-  const v = Math.max(0, Math.min(100, value || 0));
-  return (
-    <div>
-      <div className="flex justify-between text-xs mono uppercase tracking-wider text-walnut">
-        <span>{label}</span><span>{v}</span>
-      </div>
-      <div className="h-2 bg-mist rounded mt-1">
-        <div className="h-2 bg-teal rounded" style={{ width: `${v}%` }} />
-      </div>
-    </div>
-  );
-}
-
 function Badge({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div className="border border-mist rounded px-3 py-2 bg-cream">
       <div className="mono text-[10px] uppercase text-walnut">{label}</div>
-      <div className={`font-prata text-sm ${tone || "text-aubergine"}`}>{value}</div>
+      <div className={`font-prata text-sm ${tone || "text-aubergine"}`}>{value.replace(/_/g, " ")}</div>
     </div>
   );
+}
+
+function actionTone(a: string): string {
+  if (a === "ESCALATE_URGENT_SAFETY_RISK" || a === "ESCALATE_TO_MEDIATION") return "text-dispute";
+  if (a === "NO_ACTION_REQUIRED" || a === "DISMISS_INSUFFICIENT_EVIDENCE") return "text-walnut";
+  return "text-action";
+}
+
+function reasonTone(c: string): string {
+  if (c.includes("SAFETY") || c.includes("RETALIATION") || c.includes("NONRESPONSIVE")) return "border-dispute text-dispute";
+  if (c.includes("STRONG") || c.includes("ACKNOWLEDGED") || c.includes("DOCUMENTED")) return "border-action text-action";
+  return "border-mauve text-mauve";
 }
 
 export function ConsensusReviewCard({ review }: { review: ConsensusReview | null }) {
@@ -29,7 +27,7 @@ export function ConsensusReviewCard({ review }: { review: ConsensusReview | null
     return (
       <QuietPanel kicker="Consensus Review" title="Awaiting consensus review">
         <p className="text-sm text-ink/70">
-          This case has not yet been sent to GenLayer consensus. A keeper will trigger review once both sides have had a chance to submit.
+          This case has not yet been sent to GenLayer consensus. A keeper triggers review once both sides have had a chance to submit.
         </p>
       </QuietPanel>
     );
@@ -39,60 +37,43 @@ export function ConsensusReviewCard({ review }: { review: ConsensusReview | null
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="mono text-xs uppercase text-walnut">Ruling</div>
-          <div className="ruling-seal mt-1">{review.ruling}</div>
+          <div className="ruling-seal mt-1">{review.ruling.replace(/_/g, " ")}</div>
         </div>
-        <div className="flex-1 min-w-[260px] space-y-3">
-          <Meter label="Credibility" value={review.credibility_score} />
-          <Meter label="Actionability" value={review.actionability_score} />
-          <Meter label="Confidence" value={review.confidence} />
+        <div>
+          <div className="mono text-xs uppercase text-walnut">Recommended next action</div>
+          <div className={`font-prata text-lg mt-1 ${actionTone(review.recommended_next_action)}`}>
+            {review.recommended_next_action.replace(/_/g, " ")}
+          </div>
         </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-5">
+        <Badge label="Credibility" value={review.credibility_band} />
+        <Badge label="Actionability" value={review.actionability_band} />
+        <Badge label="Confidence" value={review.confidence_band} />
+        <Badge label="Risk Level" value={review.risk_level} />
         <Badge label="Urgency" value={review.urgency} />
         <Badge label="Lease Support" value={review.lease_support} />
         <Badge label="Evidence" value={review.evidence_strength} />
         <Badge label="Landlord Response" value={review.landlord_response_quality} />
       </div>
 
-      <div className="mt-5">
-        <div className="mono text-xs uppercase text-walnut">Recommended next action</div>
-        <p className="text-sm mt-1">{review.recommended_next_action}</p>
-      </div>
-
-      {review.required_actions?.length > 0 && (
-        <div className="mt-4">
-          <div className="mono text-xs uppercase text-walnut">Required actions</div>
-          <ul className="mt-1 space-y-1 text-sm">
-            {review.required_actions.map((a, i) => (
-              <li key={i} className="border-l-2 border-action pl-3">
-                <span className="mono text-xs">{a.party}</span> — {a.action}
-                {a.deadline_days != null && <span className="text-walnut text-xs"> (within {a.deadline_days}d)</span>}
-              </li>
+      {review.reason_codes?.length > 0 && (
+        <div className="mt-5">
+          <div className="mono text-xs uppercase text-walnut mb-2">Reason codes</div>
+          <div className="flex flex-wrap gap-2">
+            {review.reason_codes.map((c) => (
+              <span key={c} className={`mono text-xs px-2 py-1 border rounded ${reasonTone(c)}`}>
+                {c}
+              </span>
             ))}
-          </ul>
+          </div>
         </div>
       )}
 
-      <div className="grid md:grid-cols-3 gap-4 mt-5 text-sm">
-        <div>
-          <div className="mono text-xs uppercase text-walnut">Findings</div>
-          <ul className="list-disc ml-5">{review.findings?.map((f, i) => <li key={i}>{f}</li>)}</ul>
-        </div>
-        <div>
-          <div className="mono text-xs uppercase text-dispute">Red flags</div>
-          <ul className="list-disc ml-5">{review.red_flags?.map((f, i) => <li key={i}>{f}</li>)}</ul>
-        </div>
-        <div>
-          <div className="mono text-xs uppercase text-marigold">Missing information</div>
-          <ul className="list-disc ml-5">{review.missing_information?.map((f, i) => <li key={i}>{f}</li>)}</ul>
-        </div>
-      </div>
-
-      <div className="mt-5 border-t border-mist pt-4">
-        <div className="mono text-xs uppercase text-walnut">Reasoning summary</div>
-        <p className="text-sm mt-1 italic">{review.reasoning_summary}</p>
-      </div>
+      <p className="text-xs mt-5 italic text-walnut">
+        Output is a compact, bounded, enum-only consensus judgement produced by GenLayer validators. Every field is a categorical decision — no exact scores, no free-text wording.
+      </p>
     </QuietPanel>
   );
 }

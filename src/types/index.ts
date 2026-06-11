@@ -111,22 +111,35 @@ export type ComplaintRuling =
   | "NOT_ACTIONABLE" | "LANDLORD_RESPONSE_REQUIRED"
   | "ESCALATE_TO_MEDIATION" | "URGENT_ESCALATION";
 
+export type Band = "LOW" | "MEDIUM" | "HIGH";
+export type CredibilityBand = "WEAK" | "MODERATE" | "STRONG";
+export type RecommendedNextAction =
+  | "REQUEST_LANDLORD_REPAIR_SCHEDULE" | "REQUEST_TENANT_ADDITIONAL_EVIDENCE"
+  | "REQUEST_BOTH_PARTIES_EVIDENCE" | "SCHEDULE_PROPERTY_INSPECTION"
+  | "ESCALATE_TO_MEDIATION" | "ESCALATE_URGENT_SAFETY_RISK"
+  | "DISMISS_INSUFFICIENT_EVIDENCE" | "AWAIT_LANDLORD_RESPONSE"
+  | "APPLY_RENT_ABATEMENT" | "ENFORCE_LEASE_TERM" | "NO_ACTION_REQUIRED";
+export type ReasonCode =
+  | "REPAIR_DELAY" | "HABITABILITY_ISSUE" | "LEASE_BACKED" | "LEASE_UNCLEAR"
+  | "LANDLORD_NONRESPONSIVE" | "LANDLORD_PARTIAL_RESPONSE" | "LANDLORD_ACKNOWLEDGED_OBLIGATION"
+  | "TENANT_NOTIFIED_LANDLORD" | "EVIDENCE_INSUFFICIENT" | "EVIDENCE_MODERATE" | "EVIDENCE_STRONG"
+  | "TIMELINE_INCONSISTENT" | "PRIOR_REQUESTS_DOCUMENTED" | "URGENCY_SAFETY_RISK"
+  | "NOTIFICATION_DISPUTE" | "CONFLICTING_PARTY_NARRATIVES" | "RETALIATION_CONCERN"
+  | "DEPOSIT_DISPUTE" | "ACCESS_DISPUTE" | "OTHER";
+
 export type ConsensusReview = {
   caseId: string;
   ruling: ComplaintRuling;
-  credibility_score: number;
-  actionability_score: number;
-  confidence: number;
+  credibility_band: CredibilityBand;
+  actionability_band: Band;
+  confidence_band: Band;
+  risk_level: Urgency;
   urgency: Urgency;
   lease_support: "STRONG" | "PARTIAL" | "WEAK" | "NONE" | "UNCLEAR";
   evidence_strength: "STRONG" | "MODERATE" | "WEAK" | "INSUFFICIENT" | "CONFLICTING";
   landlord_response_quality: "COMPLETE" | "PARTIAL" | "WEAK" | "MISSING" | "CONTRADICTORY";
-  recommended_next_action: string;
-  required_actions: { party: "TENANT" | "LANDLORD" | "KEEPER" | "ADMIN"; action: string; deadline_days?: number }[];
-  findings: string[];
-  red_flags: string[];
-  missing_information: string[];
-  reasoning_summary: string;
+  reason_codes: ReasonCode[];
+  recommended_next_action: RecommendedNextAction;
 };
 
 export type ReconsiderationReason =
@@ -147,13 +160,11 @@ export type ReconsiderationReview = {
     | "MORE_EVIDENCE_REQUIRED" | "ESCALATE_TO_HUMAN_MEDIATION"
     | "RECONSIDERATION_REJECTED";
   new_ruling: ComplaintRuling;
-  new_credibility_score: number;
-  new_actionability_score: number;
-  confidence: number;
-  accepted_arguments: string[];
-  rejected_arguments: string[];
-  reasoning_summary: string;
-  final_recommendation: string;
+  new_credibility_band: CredibilityBand;
+  new_actionability_band: Band;
+  confidence_band: Band;
+  reason_codes: ReasonCode[];
+  final_recommendation: RecommendedNextAction;
 };
 
 export type Role = "tenant" | "landlord" | "keeper" | "admin" | "none";

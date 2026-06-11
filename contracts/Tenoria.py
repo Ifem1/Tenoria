@@ -71,6 +71,51 @@ ALLOWED_RECONSIDERATION = {
     "RECONSIDERATION_REJECTED",
 }
 
+# Compact bounded-JSON enums for nondeterministic consensus output.
+# No exact integer scores, no free-text prose, no open-ended arrays —
+# everything is a small categorical so validators agree on validity,
+# not on wording.
+ALLOWED_BAND = {"LOW", "MEDIUM", "HIGH"}
+ALLOWED_CREDIBILITY_BAND = {"WEAK", "MODERATE", "STRONG"}
+ALLOWED_RISK = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+ALLOWED_NEXT_ACTION = {
+    "REQUEST_LANDLORD_REPAIR_SCHEDULE",
+    "REQUEST_TENANT_ADDITIONAL_EVIDENCE",
+    "REQUEST_BOTH_PARTIES_EVIDENCE",
+    "SCHEDULE_PROPERTY_INSPECTION",
+    "ESCALATE_TO_MEDIATION",
+    "ESCALATE_URGENT_SAFETY_RISK",
+    "DISMISS_INSUFFICIENT_EVIDENCE",
+    "AWAIT_LANDLORD_RESPONSE",
+    "APPLY_RENT_ABATEMENT",
+    "ENFORCE_LEASE_TERM",
+    "NO_ACTION_REQUIRED",
+}
+ALLOWED_REASON_CODES = {
+    "REPAIR_DELAY",
+    "HABITABILITY_ISSUE",
+    "LEASE_BACKED",
+    "LEASE_UNCLEAR",
+    "LANDLORD_NONRESPONSIVE",
+    "LANDLORD_PARTIAL_RESPONSE",
+    "LANDLORD_ACKNOWLEDGED_OBLIGATION",
+    "TENANT_NOTIFIED_LANDLORD",
+    "EVIDENCE_INSUFFICIENT",
+    "EVIDENCE_MODERATE",
+    "EVIDENCE_STRONG",
+    "TIMELINE_INCONSISTENT",
+    "PRIOR_REQUESTS_DOCUMENTED",
+    "URGENCY_SAFETY_RISK",
+    "NOTIFICATION_DISPUTE",
+    "CONFLICTING_PARTY_NARRATIVES",
+    "RETALIATION_CONCERN",
+    "DEPOSIT_DISPUTE",
+    "ACCESS_DISPUTE",
+    "OTHER",
+}
+ALLOWED_APPLICABILITY = {"STRONG", "PARTIAL", "WEAK", "NONE"}
+ALLOWED_CONFLICT_SEVERITY = {"NONE", "LOW", "MEDIUM", "HIGH"}
+
 
 def _k(addr) -> str:
     """Canonical lowercase hex key for any Address-ish value.
@@ -322,21 +367,19 @@ class Tenoria(gl.Contract):
         self.paused = False
 
     # ---------- non-deterministic GenLayer review ----------
+    # Compact bounded-JSON output: every field is a small categorical enum or
+    # a bounded array of enums. No free-text prose, no exact scores. Validators
+    # agree on enum *validity*, not on wording, so prompt_non_comparative
+    # converges quickly.
     def _build_review_prompt(self, c: dict, resp: dict | None, evidence_arr: list, policy_arr: list, timeline: str) -> str:
         return f"""You are reviewing a tenant complaint case for housing mediation support.
 
-Do not simply summarise the complaint.
 Do not assume either party is truthful without evidence.
-Assess the tenant complaint narrative, landlord response, lease policy notes, evidence, and timeline.
-Judge whether the complaint is credible, actionable, supported by lease policy, urgent, and what should happen next.
-Do not make legal claims or court orders.
-Return strict JSON only.
-
 Do not invent missing facts.
-If information is missing, list it as missing.
+Do not make legal claims or court orders.
 Distinguish between weak evidence and bad faith.
-If landlord response is missing, explicitly account for that.
-If urgent safety risk appears, recommend escalation.
+If landlord response is missing, treat landlord_response_quality as MISSING.
+If urgent safety risk appears, escalate.
 
 CASE:
 {json.dumps(c)}
@@ -353,47 +396,65 @@ LEASE_POLICY_NOTES:
 TIMELINE:
 {timeline or "[]"}
 
-Return JSON with keys: ruling, credibility_score, actionability_score, confidence,
-urgency, lease_support, evidence_strength, landlord_response_quality,
-recommended_next_action, required_actions, findings, red_flags,
-missing_information, reasoning_summary.
+Return STRICT JSON ONLY with EXACTLY these keys and values from these enums.
+DO NOT include any other keys. DO NOT include any free-text prose, summaries,
+or explanations. DO NOT include exact numeric scores. EVERY field is an enum.
 
-Allowed ruling: ACTIONABLE | PARTIALLY_ACTIONABLE | NEEDS_MORE_EVIDENCE |
-NOT_ACTIONABLE | LANDLORD_RESPONSE_REQUIRED | ESCALATE_TO_MEDIATION | URGENT_ESCALATION.
-Allowed urgency: LOW | MEDIUM | HIGH | CRITICAL.
-Allowed lease_support: STRONG | PARTIAL | WEAK | NONE | UNCLEAR.
-Allowed evidence_strength: STRONG | MODERATE | WEAK | INSUFFICIENT | CONFLICTING.
-Allowed landlord_response_quality: COMPLETE | PARTIAL | WEAK | MISSING | CONTRADICTORY.
+{{
+  "ruling": one of [ACTIONABLE, PARTIALLY_ACTIONABLE, NEEDS_MORE_EVIDENCE,
+            NOT_ACTIONABLE, LANDLORD_RESPONSE_REQUIRED, ESCALATE_TO_MEDIATION,
+            URGENT_ESCALATION],
+  "credibility_band": one of [WEAK, MODERATE, STRONG],
+  "actionability_band": one of [LOW, MEDIUM, HIGH],
+  "confidence_band": one of [LOW, MEDIUM, HIGH],
+  "risk_level": one of [LOW, MEDIUM, HIGH, CRITICAL],
+  "urgency": one of [LOW, MEDIUM, HIGH, CRITICAL],
+  "lease_support": one of [STRONG, PARTIAL, WEAK, NONE, UNCLEAR],
+  "evidence_strength": one of [STRONG, MODERATE, WEAK, INSUFFICIENT, CONFLICTING],
+  "landlord_response_quality": one of [COMPLETE, PARTIAL, WEAK, MISSING, CONTRADICTORY],
+  "reason_codes": array of 1-5 codes from [REPAIR_DELAY, HABITABILITY_ISSUE,
+            LEASE_BACKED, LEASE_UNCLEAR, LANDLORD_NONRESPONSIVE,
+            LANDLORD_PARTIAL_RESPONSE, LANDLORD_ACKNOWLEDGED_OBLIGATION,
+            TENANT_NOTIFIED_LANDLORD, EVIDENCE_INSUFFICIENT, EVIDENCE_MODERATE,
+            EVIDENCE_STRONG, TIMELINE_INCONSISTENT, PRIOR_REQUESTS_DOCUMENTED,
+            URGENCY_SAFETY_RISK, NOTIFICATION_DISPUTE,
+            CONFLICTING_PARTY_NARRATIVES, RETALIATION_CONCERN, DEPOSIT_DISPUTE,
+            ACCESS_DISPUTE, OTHER],
+  "recommended_next_action": one of [REQUEST_LANDLORD_REPAIR_SCHEDULE,
+            REQUEST_TENANT_ADDITIONAL_EVIDENCE, REQUEST_BOTH_PARTIES_EVIDENCE,
+            SCHEDULE_PROPERTY_INSPECTION, ESCALATE_TO_MEDIATION,
+            ESCALATE_URGENT_SAFETY_RISK, DISMISS_INSUFFICIENT_EVIDENCE,
+            AWAIT_LANDLORD_RESPONSE, APPLY_RENT_ABATEMENT, ENFORCE_LEASE_TERM,
+            NO_ACTION_REQUIRED]
+}}
+
+Output the JSON object and NOTHING ELSE. No markdown fences. No commentary.
 """
 
     def _validate_review(self, result: dict):
-        for k in ["ruling", "credibility_score", "actionability_score", "confidence",
-                  "urgency", "lease_support", "evidence_strength",
-                  "landlord_response_quality", "recommended_next_action",
-                  "required_actions", "findings", "red_flags",
-                  "missing_information", "reasoning_summary"]:
+        required = ["ruling", "credibility_band", "actionability_band",
+                    "confidence_band", "risk_level", "urgency", "lease_support",
+                    "evidence_strength", "landlord_response_quality",
+                    "reason_codes", "recommended_next_action"]
+        for k in required:
             if k not in result:
                 raise VmUserError(f"Missing field: {k}")
-        if result["ruling"] not in ALLOWED_RULINGS:
-            raise VmUserError("Invalid ruling")
-        if result["urgency"] not in ALLOWED_URGENCY:
-            raise VmUserError("Invalid urgency")
-        if result["lease_support"] not in ALLOWED_LEASE:
-            raise VmUserError("Invalid lease_support")
-        if result["evidence_strength"] not in ALLOWED_EVIDENCE:
-            raise VmUserError("Invalid evidence_strength")
-        if result["landlord_response_quality"] not in ALLOWED_LL_QUALITY:
-            raise VmUserError("Invalid landlord_response_quality")
-        for sk in ["credibility_score", "actionability_score", "confidence"]:
-            v = int(result[sk])
-            if v < 0 or v > 100:
-                raise VmUserError(f"{sk} must be 0..100")
-        if not isinstance(result["required_actions"], list): raise VmUserError("required_actions must be array")
-        if not isinstance(result["findings"], list): raise VmUserError("findings must be array")
-        if not isinstance(result["red_flags"], list): raise VmUserError("red_flags must be array")
-        if not isinstance(result["missing_information"], list): raise VmUserError("missing_information must be array")
-        if not str(result["reasoning_summary"]).strip():
-            raise VmUserError("reasoning_summary empty")
+        if result["ruling"] not in ALLOWED_RULINGS: raise VmUserError("Invalid ruling")
+        if result["credibility_band"] not in ALLOWED_CREDIBILITY_BAND: raise VmUserError("Invalid credibility_band")
+        if result["actionability_band"] not in ALLOWED_BAND: raise VmUserError("Invalid actionability_band")
+        if result["confidence_band"] not in ALLOWED_BAND: raise VmUserError("Invalid confidence_band")
+        if result["risk_level"] not in ALLOWED_RISK: raise VmUserError("Invalid risk_level")
+        if result["urgency"] not in ALLOWED_URGENCY: raise VmUserError("Invalid urgency")
+        if result["lease_support"] not in ALLOWED_LEASE: raise VmUserError("Invalid lease_support")
+        if result["evidence_strength"] not in ALLOWED_EVIDENCE: raise VmUserError("Invalid evidence_strength")
+        if result["landlord_response_quality"] not in ALLOWED_LL_QUALITY: raise VmUserError("Invalid landlord_response_quality")
+        if result["recommended_next_action"] not in ALLOWED_NEXT_ACTION: raise VmUserError("Invalid recommended_next_action")
+        rc = result["reason_codes"]
+        if not isinstance(rc, list) or len(rc) < 1 or len(rc) > 5:
+            raise VmUserError("reason_codes must be array of 1..5")
+        for code in rc:
+            if code not in ALLOWED_REASON_CODES:
+                raise VmUserError(f"Invalid reason_code: {code}")
 
     @gl.public.write
     def review_complaint(self, case_id: str) -> None:
@@ -435,47 +496,52 @@ Allowed landlord_response_quality: COMPLETE | PARTIAL | WEAK | MISSING | CONTRAD
         raw_output = gl.eq_principle.prompt_non_comparative(
             _run,
             task=(
-                "Review the tenant complaint, landlord response, lease policy notes, "
-                "evidence, and timeline. Decide credibility, actionability, urgency, "
-                "lease support, evidence strength, landlord response quality, and the "
-                "single recommended next action. Return strict JSON only."
+                "Review the tenant complaint case using the provided narrative, "
+                "landlord response, lease policy notes, evidence, and timeline. "
+                "Output a COMPACT BOUNDED enum-only JSON judgement. No prose. "
+                "No exact numbers. Every field is a categorical enum."
             ),
             criteria=(
-                "EQUIVALENCE RULE for two candidate outputs A and B. "
-                "Accept A and B as EQUIVALENT (return true) whenever ALL of the "
-                "following hold; otherwise return false:\n"
-                "1. Both parse as JSON objects.\n"
-                "2. Both contain every key in: ruling, credibility_score, "
-                "actionability_score, confidence, urgency, lease_support, "
-                "evidence_strength, landlord_response_quality, "
-                "recommended_next_action, required_actions, findings, red_flags, "
-                "missing_information, reasoning_summary.\n"
-                "3. A.ruling == B.ruling AND both are one of: ACTIONABLE, "
-                "PARTIALLY_ACTIONABLE, NEEDS_MORE_EVIDENCE, NOT_ACTIONABLE, "
-                "LANDLORD_RESPONSE_REQUIRED, ESCALATE_TO_MEDIATION, "
-                "URGENT_ESCALATION.\n"
-                "4. A.urgency == B.urgency AND both are one of: LOW, MEDIUM, HIGH, "
-                "CRITICAL.\n"
-                "5. A.lease_support == B.lease_support AND both are one of: "
-                "STRONG, PARTIAL, WEAK, NONE, UNCLEAR.\n"
-                "6. A.evidence_strength == B.evidence_strength AND both are one of: "
-                "STRONG, MODERATE, WEAK, INSUFFICIENT, CONFLICTING.\n"
-                "7. A.landlord_response_quality == B.landlord_response_quality AND "
-                "both are one of: COMPLETE, PARTIAL, WEAK, MISSING, CONTRADICTORY.\n"
-                "8. abs(A.credibility_score - B.credibility_score) <= 25 AND both "
-                "are integers in [0, 100].\n"
-                "9. abs(A.actionability_score - B.actionability_score) <= 25 AND "
-                "both are integers in [0, 100].\n"
-                "10. abs(A.confidence - B.confidence) <= 25 AND both are integers "
-                "in [0, 100].\n"
-                "11. required_actions, findings, red_flags, missing_information "
-                "are JSON arrays in BOTH (contents may differ in wording, count, "
-                "and order — DO NOT compare element values).\n"
-                "12. recommended_next_action and reasoning_summary are non-empty "
-                "strings in BOTH (DO NOT compare wording — exact text WILL differ).\n"
-                "DO NOT require identical wording, identical element counts in arrays, "
-                "identical scores, or identical orderings. Natural LLM variance in "
-                "free-text fields and small numeric drift is EXPECTED and EQUIVALENT."
+                "ACCEPTABILITY CHECK for a candidate output O. Accept O as VALID "
+                "(return true) only if ALL of the following hold; otherwise reject:\n"
+                "1. O parses as a single JSON object. No markdown fences, no prose "
+                "outside the object.\n"
+                "2. O contains EXACTLY these keys: ruling, credibility_band, "
+                "actionability_band, confidence_band, risk_level, urgency, "
+                "lease_support, evidence_strength, landlord_response_quality, "
+                "reason_codes, recommended_next_action. No additional keys.\n"
+                "3. O.ruling is one of: ACTIONABLE, PARTIALLY_ACTIONABLE, "
+                "NEEDS_MORE_EVIDENCE, NOT_ACTIONABLE, LANDLORD_RESPONSE_REQUIRED, "
+                "ESCALATE_TO_MEDIATION, URGENT_ESCALATION.\n"
+                "4. O.credibility_band is one of: WEAK, MODERATE, STRONG.\n"
+                "5. O.actionability_band, O.confidence_band each one of: LOW, MEDIUM, HIGH.\n"
+                "6. O.risk_level, O.urgency each one of: LOW, MEDIUM, HIGH, CRITICAL.\n"
+                "7. O.lease_support one of: STRONG, PARTIAL, WEAK, NONE, UNCLEAR.\n"
+                "8. O.evidence_strength one of: STRONG, MODERATE, WEAK, INSUFFICIENT, CONFLICTING.\n"
+                "9. O.landlord_response_quality one of: COMPLETE, PARTIAL, WEAK, MISSING, CONTRADICTORY.\n"
+                "10. O.reason_codes is a JSON array of 1 to 5 entries; each entry is "
+                "one of: REPAIR_DELAY, HABITABILITY_ISSUE, LEASE_BACKED, LEASE_UNCLEAR, "
+                "LANDLORD_NONRESPONSIVE, LANDLORD_PARTIAL_RESPONSE, "
+                "LANDLORD_ACKNOWLEDGED_OBLIGATION, TENANT_NOTIFIED_LANDLORD, "
+                "EVIDENCE_INSUFFICIENT, EVIDENCE_MODERATE, EVIDENCE_STRONG, "
+                "TIMELINE_INCONSISTENT, PRIOR_REQUESTS_DOCUMENTED, "
+                "URGENCY_SAFETY_RISK, NOTIFICATION_DISPUTE, "
+                "CONFLICTING_PARTY_NARRATIVES, RETALIATION_CONCERN, "
+                "DEPOSIT_DISPUTE, ACCESS_DISPUTE, OTHER.\n"
+                "11. O.recommended_next_action is one of: "
+                "REQUEST_LANDLORD_REPAIR_SCHEDULE, REQUEST_TENANT_ADDITIONAL_EVIDENCE, "
+                "REQUEST_BOTH_PARTIES_EVIDENCE, SCHEDULE_PROPERTY_INSPECTION, "
+                "ESCALATE_TO_MEDIATION, ESCALATE_URGENT_SAFETY_RISK, "
+                "DISMISS_INSUFFICIENT_EVIDENCE, AWAIT_LANDLORD_RESPONSE, "
+                "APPLY_RENT_ABATEMENT, ENFORCE_LEASE_TERM, NO_ACTION_REQUIRED.\n"
+                "12. O is not self-contradictory: e.g. ruling=URGENT_ESCALATION "
+                "should not pair with risk_level=LOW; landlord_response_quality=MISSING "
+                "should not pair with ruling=ACTIONABLE on landlord-action grounds alone.\n"
+                "13. O is supported by the input facts (the case, landlord response, "
+                "evidence, lease notes, and timeline) — not invented.\n"
+                "ACCEPT validity. Do NOT require any specific enum value. Two valid "
+                "judgements that differ in enum choice are BOTH acceptable as long as "
+                "each individually satisfies rules 1-13."
             ),
         )
 
@@ -518,21 +584,33 @@ Allowed landlord_response_quality: COMPLETE | PARTIAL | WEAK | MISSING | CONTRAD
         prev = json.loads(prev_raw) if prev_raw else {}
 
         prompt = f"""You are reviewing a reconsideration request for a tenant complaint case.
-Return strict JSON only.
-Decide whether the new evidence/argument materially changes the original ruling.
 
 ORIGINAL_CASE: {json.dumps(c)}
 ORIGINAL_REVIEW: {json.dumps(prev)}
 RECONSIDERATION_REQUEST: {json.dumps(r)}
 
-Return JSON with keys: reconsideration_decision, new_ruling, new_credibility_score,
-new_actionability_score, confidence, accepted_arguments, rejected_arguments,
-reasoning_summary, final_recommendation.
+Return STRICT JSON ONLY with EXACTLY these keys, all enum-valued:
 
-Allowed reconsideration_decision: ORIGINAL_RULING_UPHELD | ORIGINAL_RULING_ADJUSTED |
-MORE_EVIDENCE_REQUIRED | ESCALATE_TO_HUMAN_MEDIATION | RECONSIDERATION_REJECTED.
-new_ruling must be one of: ACTIONABLE | PARTIALLY_ACTIONABLE | NEEDS_MORE_EVIDENCE |
-NOT_ACTIONABLE | LANDLORD_RESPONSE_REQUIRED | ESCALATE_TO_MEDIATION | URGENT_ESCALATION.
+{{
+  "reconsideration_decision": one of [ORIGINAL_RULING_UPHELD, ORIGINAL_RULING_ADJUSTED,
+            MORE_EVIDENCE_REQUIRED, ESCALATE_TO_HUMAN_MEDIATION,
+            RECONSIDERATION_REJECTED],
+  "new_ruling": one of [ACTIONABLE, PARTIALLY_ACTIONABLE, NEEDS_MORE_EVIDENCE,
+            NOT_ACTIONABLE, LANDLORD_RESPONSE_REQUIRED, ESCALATE_TO_MEDIATION,
+            URGENT_ESCALATION],
+  "new_credibility_band": one of [WEAK, MODERATE, STRONG],
+  "new_actionability_band": one of [LOW, MEDIUM, HIGH],
+  "confidence_band": one of [LOW, MEDIUM, HIGH],
+  "reason_codes": array of 1-5 entries from the reason-codes enum,
+  "final_recommendation": one of [REQUEST_LANDLORD_REPAIR_SCHEDULE,
+            REQUEST_TENANT_ADDITIONAL_EVIDENCE, REQUEST_BOTH_PARTIES_EVIDENCE,
+            SCHEDULE_PROPERTY_INSPECTION, ESCALATE_TO_MEDIATION,
+            ESCALATE_URGENT_SAFETY_RISK, DISMISS_INSUFFICIENT_EVIDENCE,
+            AWAIT_LANDLORD_RESPONSE, APPLY_RENT_ABATEMENT, ENFORCE_LEASE_TERM,
+            NO_ACTION_REQUIRED]
+}}
+
+No prose. No numbers. No markdown fences. JSON object only.
 """
 
         def _run() -> str:
@@ -541,39 +619,29 @@ NOT_ACTIONABLE | LANDLORD_RESPONSE_REQUIRED | ESCALATE_TO_MEDIATION | URGENT_ESC
         raw = gl.eq_principle.prompt_non_comparative(
             _run,
             task=(
-                "Decide whether the new evidence or argument materially changes the "
-                "original ruling. Return strict JSON only."
+                "Judge whether the reconsideration request materially changes the "
+                "original ruling. Output a compact bounded enum-only JSON. No prose."
             ),
             criteria=(
-                "EQUIVALENCE RULE for two candidate outputs A and B. "
-                "Accept A and B as EQUIVALENT (return true) whenever ALL of the "
-                "following hold; otherwise return false:\n"
-                "1. Both parse as JSON objects.\n"
-                "2. Both contain every key in: reconsideration_decision, "
-                "new_ruling, new_credibility_score, new_actionability_score, "
-                "confidence, accepted_arguments, rejected_arguments, "
-                "reasoning_summary, final_recommendation.\n"
-                "3. A.reconsideration_decision == B.reconsideration_decision AND "
-                "both are one of: ORIGINAL_RULING_UPHELD, ORIGINAL_RULING_ADJUSTED, "
-                "MORE_EVIDENCE_REQUIRED, ESCALATE_TO_HUMAN_MEDIATION, "
-                "RECONSIDERATION_REJECTED.\n"
-                "4. A.new_ruling == B.new_ruling AND both are one of: ACTIONABLE, "
-                "PARTIALLY_ACTIONABLE, NEEDS_MORE_EVIDENCE, NOT_ACTIONABLE, "
-                "LANDLORD_RESPONSE_REQUIRED, ESCALATE_TO_MEDIATION, "
-                "URGENT_ESCALATION.\n"
-                "5. abs(A.new_credibility_score - B.new_credibility_score) <= 25 "
-                "AND both are integers in [0, 100].\n"
-                "6. abs(A.new_actionability_score - B.new_actionability_score) <= 25 "
-                "AND both are integers in [0, 100].\n"
-                "7. abs(A.confidence - B.confidence) <= 25 AND both are integers "
-                "in [0, 100].\n"
-                "8. accepted_arguments and rejected_arguments are JSON arrays in "
-                "BOTH (contents and order may differ — DO NOT compare element "
-                "values).\n"
-                "9. reasoning_summary and final_recommendation are non-empty "
-                "strings in BOTH (DO NOT compare wording — exact text WILL differ).\n"
-                "DO NOT require identical wording, identical scores, or identical "
-                "array contents. Natural LLM variance is EXPECTED and EQUIVALENT."
+                "ACCEPTABILITY CHECK. Accept candidate O as VALID only if:\n"
+                "1. O is a single JSON object, no markdown, no prose around it.\n"
+                "2. Keys EXACTLY: reconsideration_decision, new_ruling, "
+                "new_credibility_band, new_actionability_band, confidence_band, "
+                "reason_codes, final_recommendation.\n"
+                "3. reconsideration_decision one of: ORIGINAL_RULING_UPHELD, "
+                "ORIGINAL_RULING_ADJUSTED, MORE_EVIDENCE_REQUIRED, "
+                "ESCALATE_TO_HUMAN_MEDIATION, RECONSIDERATION_REJECTED.\n"
+                "4. new_ruling one of: ACTIONABLE, PARTIALLY_ACTIONABLE, "
+                "NEEDS_MORE_EVIDENCE, NOT_ACTIONABLE, LANDLORD_RESPONSE_REQUIRED, "
+                "ESCALATE_TO_MEDIATION, URGENT_ESCALATION.\n"
+                "5. new_credibility_band one of: WEAK, MODERATE, STRONG.\n"
+                "6. new_actionability_band, confidence_band each one of: LOW, MEDIUM, HIGH.\n"
+                "7. reason_codes is a JSON array of 1 to 5 entries from the reason-codes enum.\n"
+                "8. final_recommendation one of the next-action enum values.\n"
+                "9. Self-consistent: e.g. ORIGINAL_RULING_UPHELD should not be paired "
+                "with a new_ruling that differs materially from the original review's ruling.\n"
+                "10. Supported by the input facts. ACCEPT validity. Do not require "
+                "any specific enum value."
             ),
         )
         try:
@@ -584,8 +652,20 @@ NOT_ACTIONABLE | LANDLORD_RESPONSE_REQUIRED | ESCALATE_TO_MEDIATION | URGENT_ESC
             raise VmUserError("Invalid reconsideration_decision")
         if result.get("new_ruling") not in ALLOWED_RULINGS:
             raise VmUserError("Invalid new_ruling")
-        if not str(result.get("reasoning_summary", "")).strip():
-            raise VmUserError("reasoning_summary empty")
+        if result.get("new_credibility_band") not in ALLOWED_CREDIBILITY_BAND:
+            raise VmUserError("Invalid new_credibility_band")
+        if result.get("new_actionability_band") not in ALLOWED_BAND:
+            raise VmUserError("Invalid new_actionability_band")
+        if result.get("confidence_band") not in ALLOWED_BAND:
+            raise VmUserError("Invalid confidence_band")
+        if result.get("final_recommendation") not in ALLOWED_NEXT_ACTION:
+            raise VmUserError("Invalid final_recommendation")
+        rc = result.get("reason_codes")
+        if not isinstance(rc, list) or len(rc) < 1 or len(rc) > 5:
+            raise VmUserError("reason_codes must be array of 1..5")
+        for code in rc:
+            if code not in ALLOWED_REASON_CODES:
+                raise VmUserError(f"Invalid reason_code: {code}")
 
         result["reconsiderationId"] = reconsideration_id
         result["caseId"] = case_id
@@ -596,9 +676,8 @@ NOT_ACTIONABLE | LANDLORD_RESPONSE_REQUIRED | ESCALATE_TO_MEDIATION | URGENT_ESC
 
         if result["reconsideration_decision"] == "ORIGINAL_RULING_ADJUSTED":
             prev["ruling"] = result["new_ruling"]
-            prev["credibility_score"] = result.get("new_credibility_score", prev.get("credibility_score"))
-            prev["actionability_score"] = result.get("new_actionability_score", prev.get("actionability_score"))
-            prev["reasoning_summary"] = result["reasoning_summary"]
+            prev["credibility_band"] = result["new_credibility_band"]
+            prev["actionability_band"] = result["new_actionability_band"]
             self.consensus_reviews[case_id] = json.dumps(prev)
 
     @gl.public.write
@@ -607,33 +686,42 @@ NOT_ACTIONABLE | LANDLORD_RESPONSE_REQUIRED | ESCALATE_TO_MEDIATION | URGENT_ESC
         self._require_keeper()
         c = self._get_case(case_id)
         prompt = f"""Assess how lease clause type '{clause_type}' applies to this tenant complaint.
-Return strict JSON: {{"clause_type": "...", "applicability": "STRONG|PARTIAL|WEAK|NONE", "explanation": "..."}}
+Return STRICT JSON ONLY with EXACTLY these keys, all enum-valued:
+
+{{
+  "clause_type": "{clause_type}",
+  "applicability": one of [STRONG, PARTIAL, WEAK, NONE],
+  "confidence_band": one of [LOW, MEDIUM, HIGH]
+}}
+
+No prose. No markdown fences. JSON object only.
+
 CASE: {json.dumps(c)}
 """
         def _run() -> str:
             return gl.nondet.exec_prompt(prompt)
         raw = gl.eq_principle.prompt_non_comparative(
             _run,
-            task=f"Assess how lease clause type '{clause_type}' applies to the given tenant complaint. Return strict JSON only.",
+            task=f"Assess how lease clause type '{clause_type}' applies. Output compact bounded enum-only JSON. No prose.",
             criteria=(
-                "EQUIVALENCE RULE for two candidate outputs A and B. "
-                "Accept A and B as EQUIVALENT (return true) whenever ALL of the "
-                "following hold:\n"
-                "1. Both parse as JSON objects.\n"
-                "2. Both contain keys: clause_type, applicability, explanation.\n"
-                "3. A.applicability == B.applicability AND both are one of: "
-                "STRONG, PARTIAL, WEAK, NONE.\n"
-                "4. A.clause_type and B.clause_type are non-empty strings (need "
-                "not match exactly).\n"
-                "5. explanation is a non-empty string in BOTH (DO NOT compare "
-                "wording — exact text WILL differ).\n"
-                "Natural LLM variance in free-text fields is EXPECTED and EQUIVALENT."
+                "ACCEPTABILITY CHECK. Accept candidate O as VALID only if:\n"
+                "1. O is a single JSON object, no markdown, no prose.\n"
+                "2. Keys EXACTLY: clause_type, applicability, confidence_band.\n"
+                "3. applicability one of: STRONG, PARTIAL, WEAK, NONE.\n"
+                "4. confidence_band one of: LOW, MEDIUM, HIGH.\n"
+                "5. clause_type is a non-empty string.\n"
+                "6. Judgement is supported by the case facts. ACCEPT validity. "
+                "Do not require any specific enum value."
             ),
         )
         try:
             res = _safe_json_load(raw)
         except Exception as e:
             raise VmUserError("Reviewer returned invalid JSON: " + str(e)[:120])
+        if res.get("applicability") not in ALLOWED_APPLICABILITY:
+            raise VmUserError("Invalid applicability")
+        if res.get("confidence_band") not in ALLOWED_BAND:
+            raise VmUserError("Invalid confidence_band")
         key = f"policy_assess:{case_id}:{clause_type}"
         self.lease_policy_notes[key] = json.dumps(res)
 
@@ -649,8 +737,18 @@ CASE: {json.dumps(c)}
             raw = self.case_evidence.get(eid)
             if raw:
                 evidence_arr.append(json.loads(raw))
-        prompt = f"""Identify conflicts among evidence items for this case. Return strict JSON:
-{{"conflicts": [{{"items": [...], "issue": "..."}}], "summary": "..."}}
+        prompt = f"""Identify whether the listed evidence items contradict each other.
+
+Return STRICT JSON ONLY with EXACTLY these keys, all enum-valued:
+
+{{
+  "conflicts_present": true | false,
+  "conflict_severity": one of [NONE, LOW, MEDIUM, HIGH],
+  "confidence_band": one of [LOW, MEDIUM, HIGH]
+}}
+
+No prose. No markdown fences. JSON object only.
+
 CASE: {json.dumps(c)}
 EVIDENCE: {json.dumps(evidence_arr)}
 """
@@ -658,25 +756,31 @@ EVIDENCE: {json.dumps(evidence_arr)}
             return gl.nondet.exec_prompt(prompt)
         raw = gl.eq_principle.prompt_non_comparative(
             _run,
-            task="Identify factual conflicts among the listed evidence items for this tenant complaint. Return strict JSON only.",
+            task="Decide whether evidence items conflict. Output compact bounded enum-only JSON. No prose.",
             criteria=(
-                "EQUIVALENCE RULE for two candidate outputs A and B. "
-                "Accept A and B as EQUIVALENT (return true) whenever ALL of the "
-                "following hold:\n"
-                "1. Both parse as JSON objects.\n"
-                "2. Both contain keys: conflicts, summary.\n"
-                "3. conflicts is a JSON array in BOTH (may be empty; element "
-                "count and contents may differ — DO NOT compare elements).\n"
-                "4. summary is a non-empty string in BOTH (DO NOT compare wording "
-                "— exact text WILL differ).\n"
-                "Natural LLM variance in identified conflicts and summary wording "
-                "is EXPECTED and EQUIVALENT."
+                "ACCEPTABILITY CHECK. Accept candidate O as VALID only if:\n"
+                "1. O is a single JSON object, no markdown, no prose.\n"
+                "2. Keys EXACTLY: conflicts_present, conflict_severity, confidence_band.\n"
+                "3. conflicts_present is a JSON boolean (true or false).\n"
+                "4. conflict_severity one of: NONE, LOW, MEDIUM, HIGH.\n"
+                "5. confidence_band one of: LOW, MEDIUM, HIGH.\n"
+                "6. Self-consistent: conflicts_present=false implies "
+                "conflict_severity=NONE; conflicts_present=true implies "
+                "conflict_severity in [LOW, MEDIUM, HIGH].\n"
+                "7. Supported by the listed evidence. ACCEPT validity. Do not "
+                "require any specific enum value."
             ),
         )
         try:
             res = _safe_json_load(raw)
         except Exception as e:
             raise VmUserError("Reviewer returned invalid JSON: " + str(e)[:120])
+        if not isinstance(res.get("conflicts_present"), bool):
+            raise VmUserError("conflicts_present must be boolean")
+        if res.get("conflict_severity") not in ALLOWED_CONFLICT_SEVERITY:
+            raise VmUserError("Invalid conflict_severity")
+        if res.get("confidence_band") not in ALLOWED_BAND:
+            raise VmUserError("Invalid confidence_band")
         self.case_evidence[f"conflicts:{case_id}"] = json.dumps(res)
 
     # ---------- views ----------
