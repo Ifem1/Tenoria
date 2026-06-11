@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --aubergine: #2B193D;
+  --mauve: #6E4B7E;
+  --witness: #F4D8E8;
+  --cream: #FFF7EA;
+  --sand: #E8D8B8;
+  --walnut: #6B4E3D;
+  --teal: #2A9D8F;
+  --keeper: #3A86FF;
+  --action: #2FBF71;
+  --marigold: #FFB703;
+  --dispute: #E63946;
+  --ink: #1F1F24;
+  --mist: #D9C7D8;
+}
+
+html, body { background: var(--cream); color: var(--ink); }
+body { font-family: var(--font-nunito), system-ui, sans-serif; }
+
+.font-prata { font-family: var(--font-prata), serif; }
+.font-mono-rh { font-family: var(--font-mono), ui-monospace, monospace; }
+
+.btn-primary {
+  background: var(--aubergine); color: var(--cream);
+  padding: 0.7rem 1.2rem; border-radius: 0.45rem;
+  border-left: 3px solid var(--mauve); letter-spacing: 0.04em;
+  box-shadow: inset 0 -2px 0 rgba(0,0,0,0.18);
+  text-transform: uppercase; font-size: 0.85rem;
+}
+.btn-primary:hover { background: #3a2452; }
+.btn-secondary {
+  background: var(--cream); color: var(--aubergine);
+  border: 1px solid var(--aubergine); padding: 0.55rem 1rem;
+  border-radius: 0 0.5rem 0 0.5rem; font-size: 0.85rem; text-transform: uppercase;
+}
+.btn-keeper {
+  background: var(--keeper); color: var(--cream);
+  padding: 0.7rem 1.2rem; border-radius: 0.4rem; font-weight: 600;
+  text-transform: uppercase; font-size: 0.85rem;
+}
+.btn-evidence {
+  background: var(--sand); color: var(--walnut);
+  padding: 0.5rem 0.9rem; border-radius: 0.3rem 0.3rem 0 0;
+  border-bottom: 2px solid var(--walnut); font-size: 0.85rem;
+}
+.btn-appeal {
+  background: transparent; color: var(--dispute);
+  border: 1px solid var(--dispute); padding: 0.5rem 1rem;
+  border-radius: 0.4rem; font-size: 0.85rem; text-transform: uppercase;
+}
+.quiet-panel {
+  background: var(--cream); border: 1px solid var(--mist);
+  border-radius: 0.6rem; padding: 1.25rem;
+  box-shadow: 0 1px 0 rgba(43,25,61,0.04);
+}
+.ruling-seal {
+  background: var(--aubergine); color: var(--cream);
+  padding: 0.45rem 0.9rem; letter-spacing: 0.12em;
+  text-transform: uppercase; font-family: var(--font-prata), serif;
+  border-radius: 0.25rem; display: inline-block;
+}
+.statement-tenant { background: var(--witness); border-left: 4px solid var(--mauve); }
+.statement-landlord { background: var(--sand); border-left: 4px solid var(--walnut); }
+.policy-note { background: #faf3e3; border: 1px dashed var(--walnut); }
+.mono { font-family: var(--font-mono), ui-monospace, monospace; font-size: 0.85rem; }

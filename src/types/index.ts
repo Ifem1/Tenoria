@@ -1,0 +1,159 @@
+export type ComplaintCategory =
+  | "REPAIR_DELAY" | "UNSAFE_CONDITION" | "UNLAWFUL_ENTRY" | "DEPOSIT_RELATED"
+  | "UTILITY_ISSUE" | "NOISE_OR_HARASSMENT" | "RENT_OR_FEE_DISPUTE"
+  | "LEASE_POLICY_DISPUTE" | "RETALIATION_CONCERN" | "MAINTENANCE_QUALITY"
+  | "PRIVACY_OR_ACCESS" | "OTHER";
+
+export const COMPLAINT_CATEGORIES: ComplaintCategory[] = [
+  "REPAIR_DELAY","UNSAFE_CONDITION","UNLAWFUL_ENTRY","DEPOSIT_RELATED",
+  "UTILITY_ISSUE","NOISE_OR_HARASSMENT","RENT_OR_FEE_DISPUTE",
+  "LEASE_POLICY_DISPUTE","RETALIATION_CONCERN","MAINTENANCE_QUALITY",
+  "PRIVACY_OR_ACCESS","OTHER",
+];
+
+export type CaseStatus =
+  | "AWAITING_LANDLORD_RESPONSE" | "READY_FOR_KEEPER_CHECK"
+  | "LANDLORD_RESPONSE_WINDOW_EXPIRED" | "UNDER_CONSENSUS_REVIEW"
+  | "ACTIONABLE" | "PARTIALLY_ACTIONABLE" | "NEEDS_MORE_EVIDENCE"
+  | "NOT_ACTIONABLE" | "ESCALATED" | "FINALIZED";
+
+export type VisibilityMode =
+  | "PARTIES_KEEPER_ADMIN" | "PARTIES_AND_KEEPER"
+  | "PRIVATE_PARTIES_ONLY" | "ESCALATED_PRIVATE";
+
+export type Urgency = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+
+export type ComplaintCase = {
+  id: string;
+  tenantWallet: string;
+  landlordWallet: string;
+  assignedKeeper?: string;
+  category: ComplaintCategory;
+  propertyLabel: string;
+  leaseReference?: string;
+  complaintNarrative: string;
+  desiredRemedy: string;
+  urgency: Urgency;
+  visibilityMode: VisibilityMode;
+  responseDeadline?: number;
+  status: CaseStatus;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type LandlordResponseStatus =
+  "NOT_SUBMITTED" | "SUBMITTED" | "LATE" | "INSUFFICIENT" | "UPDATED";
+
+export type LandlordResponse = {
+  id: string; caseId: string; landlordWallet: string;
+  responseNarrative: string; leasePolicyPosition: string;
+  repairActionHistory: string; proposedResolution: string;
+  admissionOrDenialSummary?: string;
+  missingInformationRequests?: string[];
+  status: LandlordResponseStatus;
+  createdAt: number; updatedAt: number;
+};
+
+export type EvidenceSide = "TENANT" | "LANDLORD" | "KEEPER" | "ADMIN" | "NEUTRAL";
+export type EvidencePrivacy = "PUBLIC_TO_PARTIES" | "PRIVATE_HASH_ONLY" | "REDACTED" | "KEEPER_ONLY";
+export type EvidenceType =
+  | "PHOTO" | "VIDEO" | "MESSAGE_THREAD" | "EMAIL" | "LEASE_DOCUMENT"
+  | "REPAIR_REQUEST" | "INSPECTION_NOTE" | "INVOICE" | "RECEIPT"
+  | "UTILITY_RECORD" | "NOTICE_DOCUMENT" | "POLICY_DOCUMENT"
+  | "WITNESS_STATEMENT" | "TIMESTAMPED_LOG" | "OTHER";
+
+export const EVIDENCE_TYPES: EvidenceType[] = [
+  "PHOTO","VIDEO","MESSAGE_THREAD","EMAIL","LEASE_DOCUMENT","REPAIR_REQUEST",
+  "INSPECTION_NOTE","INVOICE","RECEIPT","UTILITY_RECORD","NOTICE_DOCUMENT",
+  "POLICY_DOCUMENT","WITNESS_STATEMENT","TIMESTAMPED_LOG","OTHER",
+];
+
+export type CaseEvidence = {
+  id: string; caseId: string; submittedBy: string;
+  side: EvidenceSide; type: EvidenceType;
+  title: string; description: string; uri: string;
+  hash?: string; issuedAt?: string;
+  linkedTimelineEventId?: string; privacy: EvidencePrivacy;
+};
+
+export type PolicyClauseType =
+  | "REPAIRS" | "MAINTENANCE" | "HABITABILITY" | "ENTRY_NOTICE"
+  | "TENANT_OBLIGATIONS" | "LANDLORD_OBLIGATIONS" | "PAYMENTS_AND_FEES"
+  | "COMPLAINT_PROCEDURE" | "DEPOSIT" | "TERMINATION" | "OTHER";
+
+export const POLICY_CLAUSE_TYPES: PolicyClauseType[] = [
+  "REPAIRS","MAINTENANCE","HABITABILITY","ENTRY_NOTICE","TENANT_OBLIGATIONS",
+  "LANDLORD_OBLIGATIONS","PAYMENTS_AND_FEES","COMPLAINT_PROCEDURE","DEPOSIT",
+  "TERMINATION","OTHER",
+];
+
+export type PolicyNote = {
+  id: string; caseId: string; clauseType: PolicyClauseType;
+  clauseName: string; clauseSummary: string;
+  clauseUri?: string; partyObligation: string;
+  partyInterpretation: string; evidenceRef?: string;
+};
+
+export type TimelineEventType =
+  | "LEASE_SIGNED" | "ISSUE_FIRST_NOTICED" | "TENANT_NOTIFIED_LANDLORD"
+  | "LANDLORD_RESPONDED" | "REPAIR_SCHEDULED" | "REPAIR_COMPLETED"
+  | "FOLLOW_UP_SENT" | "INSPECTION_COMPLETED" | "COMPLAINT_FILED"
+  | "LANDLORD_RESPONSE_SUBMITTED" | "KEEPER_CHECKED" | "CONSENSUS_REVIEW_RUN"
+  | "RULING_STORED" | "FOLLOW_UP_ADDED" | "RECONSIDERATION_REQUESTED";
+
+export type TimelineEvent = {
+  id: string; caseId: string; eventType: TimelineEventType;
+  date: number; description: string; party: string; evidenceRefs?: string[];
+};
+
+export type ComplaintRuling =
+  | "ACTIONABLE" | "PARTIALLY_ACTIONABLE" | "NEEDS_MORE_EVIDENCE"
+  | "NOT_ACTIONABLE" | "LANDLORD_RESPONSE_REQUIRED"
+  | "ESCALATE_TO_MEDIATION" | "URGENT_ESCALATION";
+
+export type ConsensusReview = {
+  caseId: string;
+  ruling: ComplaintRuling;
+  credibility_score: number;
+  actionability_score: number;
+  confidence: number;
+  urgency: Urgency;
+  lease_support: "STRONG" | "PARTIAL" | "WEAK" | "NONE" | "UNCLEAR";
+  evidence_strength: "STRONG" | "MODERATE" | "WEAK" | "INSUFFICIENT" | "CONFLICTING";
+  landlord_response_quality: "COMPLETE" | "PARTIAL" | "WEAK" | "MISSING" | "CONTRADICTORY";
+  recommended_next_action: string;
+  required_actions: { party: "TENANT" | "LANDLORD" | "KEEPER" | "ADMIN"; action: string; deadline_days?: number }[];
+  findings: string[];
+  red_flags: string[];
+  missing_information: string[];
+  reasoning_summary: string;
+};
+
+export type ReconsiderationReason =
+  | "NEW_EVIDENCE_AVAILABLE" | "LEASE_POLICY_MISREAD"
+  | "LANDLORD_RESPONSE_MISINTERPRETED" | "TENANT_NARRATIVE_MISINTERPRETED"
+  | "URGENCY_MISJUDGED" | "EVIDENCE_NOT_CONSIDERED" | "OTHER";
+
+export type Reconsideration = {
+  id: string; caseId: string; requestedBy: string;
+  reason: ReconsiderationReason; explanation: string;
+  newEvidenceRefs?: string[]; status: "RECONSIDERATION_SUBMITTED" | "REVIEWED";
+};
+
+export type ReconsiderationReview = {
+  reconsiderationId: string; caseId: string;
+  reconsideration_decision:
+    | "ORIGINAL_RULING_UPHELD" | "ORIGINAL_RULING_ADJUSTED"
+    | "MORE_EVIDENCE_REQUIRED" | "ESCALATE_TO_HUMAN_MEDIATION"
+    | "RECONSIDERATION_REJECTED";
+  new_ruling: ComplaintRuling;
+  new_credibility_score: number;
+  new_actionability_score: number;
+  confidence: number;
+  accepted_arguments: string[];
+  rejected_arguments: string[];
+  reasoning_summary: string;
+  final_recommendation: string;
+};
+
+export type Role = "tenant" | "landlord" | "keeper" | "admin" | "none";
