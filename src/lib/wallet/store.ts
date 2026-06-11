@@ -20,8 +20,8 @@ export const useWallet = create<WalletState>((set) => ({
 }));
 
 export async function connectMetaMask(): Promise<string> {
-  const eth = (typeof window !== "undefined" ? (window as any).ethereum : null);
-  if (!eth) throw new Error("No injected wallet found");
-  const accounts: string[] = await eth.request({ method: "eth_requestAccounts" });
+  const { getMetaMaskProvider, requestAccounts } = await import("@/lib/genlayer/provider");
+  const provider = getMetaMaskProvider();
+  const accounts = await requestAccounts(provider);
   return (accounts?.[0] || "").toLowerCase();
 }

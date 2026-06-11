@@ -2,13 +2,16 @@
 import { getWalletClient, CONTRACT_ADDRESS } from "./client";
 
 async function write(method: string, args: any[]): Promise<string> {
-  const c = await getWalletClient();
-  const hash: string = await c.writeContract({
+  console.log("[write]", method, args);
+  const { client, account } = await getWalletClient();
+  console.log("[write] using account", account, "contract", CONTRACT_ADDRESS);
+  const hash: string = await client.writeContract({
     address: CONTRACT_ADDRESS,
     functionName: method,
     args,
     value: 0n,
   });
+  console.log("[write] tx hash", method, hash);
   return hash;
 }
 

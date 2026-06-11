@@ -1,15 +1,13 @@
 "use client";
 import { GENLAYER_STUDIONET, CONTRACT_ADDRESS, CONTRACT_CONFIGURED } from "./config";
+import { getMetaMaskProvider, requestAccounts } from "./provider";
 
-// Read-only client: pure RPC, no signer. Used for view calls.
 let _readClient: any = null;
-
-// Wallet-connected client via the GenLayer MetaMask Snap. Used for writes.
 let _walletClient: any = null;
+let _walletAccount: string | null = null;
 
 async function loadSdk(): Promise<any> {
-  const sdk: any = await import("genlayer-js");
-  return sdk;
+  return await import("genlayer-js");
 }
 
 function chainConfig(sdk: any) {
@@ -31,37 +29,62 @@ export async function getReadClient(): Promise<any> {
   });
   return _readClient;
 }
-
-// Backwards-compatible alias for existing read.ts callers.
 export const getClient = getReadClient;
 
-export async function getWalletClient(): Promise<any> {
-  if (_walletClient) return _walletClient;
-  if (typeof window === "undefined") throw new Error("Wallet client requires a browser");
-  if (!(window as any).ethereum) throw new Error("No injected wallet found. Install MetaMask.");
+// Build a wallet client that signs via the injected MetaMask provider directly.
+// No GenLayer Snap. No viem walletClient. createClient routes signing methods
+// through `config.provider` when `config.account` is an address string.
+export async function getWalletClient(): Promise<{ client: any; account: string }> {
   if (!CONTRACT_CONFIGURED) throw new Error("CONTRACT_NOT_CONFIGURED");
+
+  const provider = getMetaMaskProvider();
+  console.log("[walletClient] provider", { isMetaMask: provider?.isMetaMask, hasProviders: Array.isArray((window as any).ethereum?.providers) });
+
+  const accounts = await requestAccounts(provider);
+  console.log("[walletClient] accounts", accounts);
+  const account = (accounts?.[0] || "").toLowerCase();
+  if (!account) throw new Error("MetaMask returned no account");
+
+  // Ensure the wallet is on Studionet (request a switch / add if not).
+  try {
+    const currentHex: string = await provider.request({ method: "eth_chainId" });
+    const desiredHex = "0x" + GENLAYER_STUDIONET.chainId.toString(16);
+    if (currentHex?.toLowerCase() !== desiredHex.toLowerCase()) {
+      console.log("[walletClient] switching chain", currentHex, "->", desiredHex);
+      try {
+        await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: desiredHex }] });
+      } catch (switchErr: any) {
+        if (switchErr?.code === 4902) {
+          await provider.request({
+            method: "wallet_addEthereumChain",
+            params: [{
+              chainId: desiredHex,
+              chainName: GENLAYER_STUDIONET.name,
+              rpcUrls: [GENLAYER_STUDIONET.rpcUrl],
+              nativeCurrency: { name: GENLAYER_STUDIONET.currency, symbol: GENLAYER_STUDIONET.currency, decimals: 18 },
+              blockExplorerUrls: [GENLAYER_STUDIONET.explorerUrl],
+            }],
+          });
+        } else {
+          throw switchErr;
+        }
+      }
+    }
+  } catch (e: any) {
+    console.warn("[walletClient] chain switch warning", e?.message || e);
+  }
+
+  if (_walletClient && _walletAccount === account) return { client: _walletClient, account };
+
   const sdk = await loadSdk();
-  // 1. Base client
-  const base = sdk.createClient({
+  _walletClient = sdk.createClient({
     chain: chainConfig(sdk),
     endpoint: GENLAYER_STUDIONET.rpcUrl,
+    account,
+    provider,
   });
-  // 2. Upgrade to MetaMask-signing client via the GenLayer Snap.
-  //    First call triggers the snap install / permission prompt in MetaMask,
-  //    plus a chain-switch to GenLayer Studionet if needed.
-  try {
-    _walletClient = await base.metamaskClient();
-  } catch (e: any) {
-    const msg = String(e?.message || e);
-    if (msg.toLowerCase().includes("snap")) {
-      throw new Error(
-        "GenLayer MetaMask Snap not installed or rejected. " +
-        "Open MetaMask, approve the GenLayer Snap install, then retry."
-      );
-    }
-    throw e;
-  }
-  return _walletClient;
+  _walletAccount = account;
+  return { client: _walletClient, account };
 }
 
 export function explorerTxUrl(hash: string): string {
