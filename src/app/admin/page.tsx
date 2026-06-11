@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useWallet } from "@/lib/wallet/store";
-import { getOwner, getProtocolStats } from "@/lib/genlayer/read";
+import { getOwner, getProtocolStats, isKeeper } from "@/lib/genlayer/read";
 import { addKeeper, removeKeeper, pauseProtocol, unpauseProtocol, assignKeeper } from "@/lib/genlayer/write";
 import { getMetaMaskProvider, requestAccounts } from "@/lib/genlayer/provider";
 import { QuietPanel } from "@/components/ui/QuietPanel";
@@ -13,6 +13,21 @@ export default function AdminPage() {
   const [stats, setStats] = useState<any>(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [checkAddr, setCheckAddr] = useState("");
+  const [checkResult, setCheckResult] = useState<null | { addr: string; isKeeper: boolean }>(null);
+  const [checking, setChecking] = useState(false);
+
+  async function onCheckKeeper() {
+    const a = checkAddr.trim();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(a)) { setCheckResult(null); setMsg("Invalid address format"); return; }
+    setChecking(true); setCheckResult(null);
+    try {
+      const ok = await isKeeper(a);
+      setCheckResult({ addr: a, isKeeper: !!ok });
+    } catch (e: any) {
+      setMsg("Check failed: " + (e?.message || e));
+    } finally { setChecking(false); }
+  }
 
   useEffect(() => {
     (async () => {
@@ -90,6 +105,25 @@ export default function AdminPage() {
 
       {isOwner && (
         <>
+          <QuietPanel kicker="Verify" title="Check if an address is a registered keeper">
+            <div className="flex gap-2 flex-wrap items-center">
+              <input
+                value={checkAddr}
+                onChange={(e) => setCheckAddr(e.target.value)}
+                placeholder="0x..."
+                className="mono text-sm flex-1 min-w-[280px] border border-mist bg-white px-3 py-2 rounded"
+              />
+              <KeeperButton disabled={checking} onClick={onCheckKeeper}>
+                {checking ? "CHECKING…" : "CHECK"}
+              </KeeperButton>
+            </div>
+            {checkResult && (
+              <div className={`mt-3 mono text-sm border-l-2 pl-3 py-2 ${checkResult.isKeeper ? "border-action text-action" : "border-dispute text-dispute"}`}>
+                {checkResult.addr} → {checkResult.isKeeper ? "IS a registered keeper ✓" : "is NOT a registered keeper ✗"}
+              </div>
+            )}
+          </QuietPanel>
+
           <QuietPanel kicker="Keepers" title="Manage keeper addresses">
             <div className="flex flex-wrap gap-2">
               <KeeperButton disabled={busy} onClick={onAddKeeper}>ADD KEEPER</KeeperButton>

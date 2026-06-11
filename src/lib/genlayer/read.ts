@@ -34,4 +34,5 @@ export const getUserCases = (addr: string) => read<string[]>("get_user_cases", [
 export const getKeeperQueue = (addr: string) => read<ComplaintCase[]>("get_keeper_queue", [addr]);
 export const getProtocolStats = () => read<Record<string, any>>("get_protocol_stats", []);
 export const isKeeper = (addr: string) => read<boolean>("is_keeper", [addr]);
+export const checkKeeper = isKeeper;
 export const getOwner = () => read<string>("get_owner", []);
