@@ -1,6 +1,5 @@
-# Tenoria — GenLayer Tenant Complaint Arbitrator Contract
-# Source of truth for cases, responses, evidence, lease policy notes,
-# timelines, keeper assignments, consensus reviews, and reconsiderations.
+# v.0.2.18
+# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
 from genlayer import *
 import json
@@ -449,12 +448,18 @@ Output the JSON object and NOTHING ELSE. No markdown fences. No commentary.
         if result["evidence_strength"] not in ALLOWED_EVIDENCE: raise VmUserError("Invalid evidence_strength")
         if result["landlord_response_quality"] not in ALLOWED_LL_QUALITY: raise VmUserError("Invalid landlord_response_quality")
         if result["recommended_next_action"] not in ALLOWED_NEXT_ACTION: raise VmUserError("Invalid recommended_next_action")
-        rc = result["reason_codes"]
-        if not isinstance(rc, list) or len(rc) < 1 or len(rc) > 5:
-            raise VmUserError("reason_codes must be array of 1..5")
-        for code in rc:
-            if code not in ALLOWED_REASON_CODES:
-                raise VmUserError(f"Invalid reason_code: {code}")
+        rc = result.get("reason_codes")
+        if not isinstance(rc, list):
+            raise VmUserError("reason_codes must be array")
+        # Gracefully drop unknown codes; require at least one valid code remains.
+        # LLMs occasionally hallucinate synonyms (e.g. HEALTH_SAFETY_RISK instead
+        # of URGENCY_SAFETY_RISK); we keep the intent without bricking the tx.
+        rc_clean = [code for code in rc if code in ALLOWED_REASON_CODES]
+        if len(rc_clean) < 1:
+            raise VmUserError("reason_codes had no recognised codes")
+        if len(rc_clean) > 5:
+            rc_clean = rc_clean[:5]
+        result["reason_codes"] = rc_clean
 
     @gl.public.write
     def review_complaint(self, case_id: str) -> None:
@@ -661,11 +666,14 @@ No prose. No numbers. No markdown fences. JSON object only.
         if result.get("final_recommendation") not in ALLOWED_NEXT_ACTION:
             raise VmUserError("Invalid final_recommendation")
         rc = result.get("reason_codes")
-        if not isinstance(rc, list) or len(rc) < 1 or len(rc) > 5:
-            raise VmUserError("reason_codes must be array of 1..5")
-        for code in rc:
-            if code not in ALLOWED_REASON_CODES:
-                raise VmUserError(f"Invalid reason_code: {code}")
+        if not isinstance(rc, list):
+            raise VmUserError("reason_codes must be array")
+        rc_clean = [code for code in rc if code in ALLOWED_REASON_CODES]
+        if len(rc_clean) < 1:
+            raise VmUserError("reason_codes had no recognised codes")
+        if len(rc_clean) > 5:
+            rc_clean = rc_clean[:5]
+        result["reason_codes"] = rc_clean
 
         result["reconsiderationId"] = reconsideration_id
         result["caseId"] = case_id
