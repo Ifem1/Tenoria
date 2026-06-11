@@ -12,10 +12,12 @@ export const COMPLAINT_CATEGORIES: ComplaintCategory[] = [
 ];
 
 export type CaseStatus =
-  | "AWAITING_LANDLORD_RESPONSE" | "READY_FOR_KEEPER_CHECK"
-  | "LANDLORD_RESPONSE_WINDOW_EXPIRED" | "UNDER_CONSENSUS_REVIEW"
-  | "ACTIONABLE" | "PARTIALLY_ACTIONABLE" | "NEEDS_MORE_EVIDENCE"
-  | "NOT_ACTIONABLE" | "ESCALATED" | "FINALIZED";
+  | "OPENED" | "AWAITING_LANDLORD_RESPONSE" | "RESPONSE_SUBMITTED"
+  | "NEEDS_MORE_EVIDENCE" | "READY_FOR_REVIEW" | "UNDER_REVIEW"
+  | "REVIEWED" | "ACTIONABLE" | "PARTIALLY_ACTIONABLE" | "NOT_ACTIONABLE"
+  | "ESCALATED" | "URGENT_ESCALATION" | "RECONSIDERATION_SUBMITTED"
+  | "READY_FOR_RECONSIDERATION_REVIEW" | "RECONSIDERATION_REVIEWED"
+  | "FINALIZED" | "CANCELLED";
 
 export type VisibilityMode =
   | "PARTIES_KEEPER_ADMIN" | "PARTIES_AND_KEEPER"
@@ -140,6 +142,18 @@ export type ConsensusReview = {
   landlord_response_quality: "COMPLETE" | "PARTIAL" | "WEAK" | "MISSING" | "CONTRADICTORY";
   reason_codes: ReasonCode[];
   recommended_next_action: RecommendedNextAction;
+  reasoning?: string[];
+  missing_records?: string[];
+  required_next_steps?: string[];
+  reviewedAt?: string;
+  reviewFeeWei?: string;
+};
+
+export type ProtocolConfig = {
+  owner: string;
+  paused: boolean;
+  review_fee_wei: string;
+  keeper_required: boolean;
 };
 
 export type ReconsiderationReason =

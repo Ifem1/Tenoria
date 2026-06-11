@@ -17,7 +17,7 @@ export default function KeeperPage() {
     if (!address || allowed !== true) return;
     (async () => {
       try {
-        const q = await getKeeperQueue(address);
+        const q = await getKeeperQueue(address, address);
         setQueue(Array.isArray(q) ? q : []);
       } catch (e: any) { setErr(e?.message || String(e)); }
     })();

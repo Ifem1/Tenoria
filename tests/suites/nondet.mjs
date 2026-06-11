@@ -130,8 +130,13 @@ export async function run() {
   const recReview = JSON.parse(recReviewRaw);
   assert(ALLOWED_REC.has(recReview.reconsideration_decision), `recon decision enum: ${recReview.reconsideration_decision}`);
   assert(ALLOWED_RULINGS.has(recReview.new_ruling), `new_ruling enum: ${recReview.new_ruling}`);
-  assert(typeof recReview.reasoning_summary === "string" && recReview.reasoning_summary.trim(), "recon reasoning_summary non-empty");
-  console.log(`    recon decision=${recReview.reconsideration_decision} new_ruling=${recReview.new_ruling}`);
+  assert(ALLOWED_CREDIBILITY_BAND.has(recReview.new_credibility_band), `recon new_credibility_band: ${recReview.new_credibility_band}`);
+  assert(ALLOWED_BAND.has(recReview.new_actionability_band), `recon new_actionability_band: ${recReview.new_actionability_band}`);
+  assert(ALLOWED_BAND.has(recReview.confidence_band), `recon confidence_band: ${recReview.confidence_band}`);
+  assert(ALLOWED_NEXT_ACTION.has(recReview.final_recommendation), `recon final_recommendation: ${recReview.final_recommendation}`);
+  assert(Array.isArray(recReview.reason_codes) && recReview.reason_codes.length >= 1 && recReview.reason_codes.length <= 5, `recon reason_codes 1..5: ${recReview.reason_codes?.length}`);
+  for (const code of recReview.reason_codes) assert(ALLOWED_REASON_CODES.has(code), `recon reason_code: ${code}`);
+  console.log(`    recon decision=${recReview.reconsideration_decision} new_ruling=${recReview.new_ruling} cred=${recReview.new_credibility_band} act=${recReview.new_actionability_band} action=${recReview.final_recommendation} reasons=${recReview.reason_codes.join(",")}`);
 
   return { caseId1, caseId2, recId };
 }

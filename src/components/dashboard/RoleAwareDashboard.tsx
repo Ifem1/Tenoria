@@ -20,8 +20,8 @@ export function RoleAwareDashboard() {
     (async () => {
       try {
         const [ids, k, ownerAddr, s] = await Promise.all([
-          getUserCases(address),
-          getKeeperQueue(address),
+          getUserCases(address, address),
+          getKeeperQueue(address, address),
           getOwner(),
           getProtocolStats(),
         ]);

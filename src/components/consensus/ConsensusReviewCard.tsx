@@ -27,7 +27,7 @@ export function ConsensusReviewCard({ review }: { review: ConsensusReview | null
     return (
       <QuietPanel kicker="Consensus Review" title="Awaiting consensus review">
         <p className="text-sm text-ink/70">
-          This case has not yet been sent to GenLayer consensus. A keeper triggers review once both sides have had a chance to submit.
+          This case has not yet been sent to GenLayer consensus. Any case party can trigger review once the case is READY_FOR_REVIEW.
         </p>
       </QuietPanel>
     );
@@ -71,9 +71,38 @@ export function ConsensusReviewCard({ review }: { review: ConsensusReview | null
         </div>
       )}
 
-      <p className="text-xs mt-5 italic text-walnut">
-        Output is a compact, bounded, enum-only consensus judgement produced by GenLayer validators. Every field is a categorical decision — no exact scores, no free-text wording.
-      </p>
+      {!!review.reasoning?.length && (
+        <div className="mt-5">
+          <div className="mono text-xs uppercase text-walnut mb-2">Reasoning (evidence-based)</div>
+          <ul className="list-disc ml-5 text-sm space-y-1">
+            {review.reasoning.map((r, i) => <li key={i}>{r}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {!!review.required_next_steps?.length && (
+        <div className="mt-5">
+          <div className="mono text-xs uppercase text-walnut mb-2">Required next steps</div>
+          <ul className="list-disc ml-5 text-sm space-y-1">
+            {review.required_next_steps.map((s, i) => <li key={i}>{s}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {!!review.missing_records?.length && (
+        <div className="mt-5">
+          <div className="mono text-xs uppercase text-walnut mb-2">Missing records</div>
+          <ul className="list-disc ml-5 text-sm space-y-1 text-marigold">
+            {review.missing_records.map((s, i) => <li key={i}>{s}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {review.reviewFeeWei && (
+        <p className="text-xs mt-5 italic text-walnut">
+          Review fee paid: {(Number(BigInt(review.reviewFeeWei)) / 1e18).toFixed(4)} GEN. GenLayer validators produced this bounded enum-only judgement; every field is a categorical decision.
+        </p>
+      )}
     </QuietPanel>
   );
 }

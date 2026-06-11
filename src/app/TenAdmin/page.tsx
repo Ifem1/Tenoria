@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useWallet } from "@/lib/wallet/store";
-import { getOwner, getProtocolStats, isKeeper } from "@/lib/genlayer/read";
-import { addKeeper, removeKeeper, pauseProtocol, unpauseProtocol, assignKeeper } from "@/lib/genlayer/write";
+import { getOwner, getProtocolStats, isKeeper, getConfig } from "@/lib/genlayer/read";
+import { addKeeper, removeKeeper, pauseProtocol, unpauseProtocol, assignKeeper, adminSetReviewFee, adminSetKeeperRequired, transferOwnership } from "@/lib/genlayer/write";
 import { getMetaMaskProvider, requestAccounts } from "@/lib/genlayer/provider";
 import { QuietPanel } from "@/components/ui/QuietPanel";
 import { MediatorButton, AppealButton, KeeperButton } from "@/components/ui/Buttons";
@@ -21,11 +21,14 @@ export default function TenAdminPage() {
   const [checking, setChecking] = useState(false);
   const [ownerLoaded, setOwnerLoaded] = useState(false);
 
+  const [config, setConfig] = useState<any>(null);
+
   useEffect(() => {
     (async () => {
       try {
         const o = await getOwner(); setOwner(o || "");
         const s = await getProtocolStats(); setStats(s);
+        const cfg = await getConfig(); setConfig(cfg);
       } catch (e: any) { setMsg(e?.message || String(e)); }
       finally { setOwnerLoaded(true); }
     })();
@@ -152,6 +155,31 @@ export default function TenAdminPage() {
         <div className="flex gap-2">
           <AppealButton disabled={busy} onClick={() => run("Pause", pauseProtocol)}>PAUSE</AppealButton>
           <KeeperButton disabled={busy} onClick={() => run("Unpause", unpauseProtocol)}>UNPAUSE</KeeperButton>
+        </div>
+      </QuietPanel>
+
+      <QuietPanel kicker="Review fee" title="Set the GEN fee charged on trigger_review">
+        <div className="mono text-xs mb-3">
+          current: {config ? (Number(BigInt(config.review_fee_wei || "0")) / 1e18).toFixed(6) + " GEN" : "(loading)"}
+          {" "}· keeper_required: {String(config?.keeper_required)}
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <KeeperButton disabled={busy} onClick={() => {
+            const gen = window.prompt("New review fee in GEN (e.g. 0.01)") || "";
+            if (!gen) return;
+            try {
+              const wei = BigInt(Math.round(Number(gen) * 1e18));
+              run("Set review fee", () => adminSetReviewFee(wei.toString()));
+            } catch { setMsg("Invalid number"); }
+          }}>SET REVIEW FEE</KeeperButton>
+          <KeeperButton disabled={busy} onClick={() => run("Toggle keeper-required", () => adminSetKeeperRequired(!config?.keeper_required))}>
+            {config?.keeper_required ? "DISABLE KEEPER-REQUIRED" : "ENABLE KEEPER-REQUIRED"}
+          </KeeperButton>
+          <AppealButton disabled={busy} onClick={() => {
+            const a = window.prompt("New owner address (0x...) — irreversible") || "";
+            if (a && /^0x[0-9a-fA-F]{40}$/.test(a)) run("Transfer ownership", () => transferOwnership(a));
+            else setMsg("Invalid address");
+          }}>TRANSFER OWNERSHIP</AppealButton>
         </div>
       </QuietPanel>
 

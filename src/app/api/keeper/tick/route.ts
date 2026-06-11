@@ -11,53 +11,31 @@ const CRON_SECRET = process.env.CRON_SECRET || "";
 const MAX_REVIEWS_PER_TICK = Number(process.env.KEEPER_MAX_PER_TICK || 5);
 const MAX_RETRIES = Number(process.env.KEEPER_MAX_RETRIES || 3);
 
-const failures: Map<string, number> = (globalThis as any).__tenoriaFailures ||=
-  new Map<string, number>();
+const failures: Map<string, number> = (globalThis as any).__tenoriaFailures ||= new Map<string, number>();
 const inFlight: Set<string> = (globalThis as any).__tenoriaInFlight ||= new Set<string>();
 
-type Case = {
-  id: string;
-  status: string;
-  responseDeadline?: number;
-  assignedKeeper?: string;
-  urgency?: string;
-};
+type Case = { id: string; status: string; assignedKeeper?: string; urgency?: string };
 
-function unauthorized() {
-  return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+function unauthorized() { return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 }); }
+
+function readyForReview(c: Case): boolean {
+  return c.status === "READY_FOR_REVIEW";
 }
-
-function isReady(c: Case, hasResponse: boolean, evidenceCount: number): { ready: boolean; reason: string } {
-  if (!c) return { ready: false, reason: "no-case" };
-  if (c.status === "UNDER_CONSENSUS_REVIEW") return { ready: false, reason: "already-reviewing" };
-  if (["FINALIZED", "ACTIONABLE", "PARTIALLY_ACTIONABLE", "NOT_ACTIONABLE"].includes(c.status))
-    return { ready: false, reason: "already-ruled" };
-  if (c.status === "AWAITING_LANDLORD_RESPONSE") {
-    const deadline = Number(c.responseDeadline || 0);
-    if (!deadline || deadline > Date.now()) return { ready: false, reason: "response-window-open" };
-  }
-  if (!hasResponse && evidenceCount === 0) return { ready: false, reason: "no-evidence-no-response" };
-  return { ready: true, reason: "ok" };
+function readyForReconsideration(c: Case): boolean {
+  return c.status === "READY_FOR_RECONSIDERATION_REVIEW";
 }
 
 async function loadClient() {
   if (!CONTRACT) throw new Error("CONTRACT_NOT_CONFIGURED");
   if (!KEEPER_KEY) throw new Error("KEEPER_KEY_MISSING");
   const sdk: any = await import("genlayer-js");
-  const createClient = sdk.createClient || sdk.default?.createClient;
-  const createAccount = sdk.createAccount || sdk.default?.createAccount;
-  if (!createClient) throw new Error("genlayer-js: createClient missing");
-  const account = createAccount ? createAccount(KEEPER_KEY) : undefined;
-  const client = createClient({
-    chain: {
-      id: CHAIN_ID,
-      name: "GenLayer Studionet",
-      rpcUrls: { default: { http: [RPC_URL] } },
-      nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
-    },
-    account,
-  });
-  return client;
+  const chain = sdk.chains?.studionet || {
+    id: CHAIN_ID, name: "GenLayer Studionet",
+    rpcUrls: { default: { http: [RPC_URL] } },
+    nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
+  };
+  const account = sdk.createAccount(KEEPER_KEY);
+  return sdk.createClient({ chain, endpoint: RPC_URL, account });
 }
 
 async function read<T>(client: any, fn: string, args: any[]): Promise<T | null> {
@@ -66,13 +44,11 @@ async function read<T>(client: any, fn: string, args: any[]): Promise<T | null> 
     if (raw == null || raw === "") return null;
     if (typeof raw !== "string") return raw as T;
     try { return JSON.parse(raw) as T; } catch { return raw as unknown as T; }
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-async function write(client: any, fn: string, args: any[]): Promise<string> {
-  return await client.writeContract({ address: CONTRACT, functionName: fn, args });
+async function write(client: any, fn: string, args: any[], value: bigint = 0n): Promise<string> {
+  return await client.writeContract({ address: CONTRACT, functionName: fn, args, value });
 }
 
 export async function POST(req: NextRequest) { return handle(req); }
@@ -82,28 +58,27 @@ async function handle(req: NextRequest) {
   if (CRON_SECRET) {
     const auth = req.headers.get("authorization") || "";
     const qs = req.nextUrl.searchParams.get("secret") || "";
-    const ok = auth === `Bearer ${CRON_SECRET}` || qs === CRON_SECRET;
-    if (!ok) return unauthorized();
+    if (!(auth === `Bearer ${CRON_SECRET}` || qs === CRON_SECRET)) return unauthorized();
   }
-
-  if (!CONTRACT) {
-    return NextResponse.json({ ok: false, error: "CONTRACT_NOT_CONFIGURED" }, { status: 503 });
-  }
-  if (!KEEPER_KEY) {
-    return NextResponse.json({ ok: false, error: "KEEPER_KEY_MISSING" }, { status: 503 });
-  }
+  if (!CONTRACT) return NextResponse.json({ ok: false, error: "CONTRACT_NOT_CONFIGURED" }, { status: 503 });
+  if (!KEEPER_KEY) return NextResponse.json({ ok: false, error: "KEEPER_KEY_MISSING" }, { status: 503 });
 
   const started = Date.now();
   let client: any;
-  try {
-    client = await loadClient();
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
-  }
+  try { client = await loadClient(); }
+  catch (e: any) { return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 }); }
 
   const keeperAddr = (client.account?.address || "").toLowerCase();
-  const queue = (await read<Case[]>(client, "get_keeper_queue", [keeperAddr])) || [];
 
+  // Pull current review fee from contract so we always pay the correct amount
+  const config = await read<any>(client, "get_config", []);
+  const feeWei = BigInt(config?.review_fee_wei || "10000000000000000");
+  const paused = !!config?.paused;
+  if (paused) {
+    return NextResponse.json({ ok: true, keeper: keeperAddr, paused: true, triggered: 0 });
+  }
+
+  const queue = (await read<Case[]>(client, "get_keeper_queue", [keeperAddr])) || [];
   const results: any[] = [];
   let triggered = 0;
 
@@ -113,31 +88,29 @@ async function handle(req: NextRequest) {
     const fails = failures.get(c.id) || 0;
     if (fails >= MAX_RETRIES) { results.push({ id: c.id, action: "skip", reason: "max-retries" }); continue; }
 
-    const resp = await read<any>(client, "get_landlord_response", [c.id]);
-    const ev = (await read<any[]>(client, "get_case_evidence", [c.id])) || [];
-    const gate = isReady(c, !!resp, ev.length);
-    if (!gate.ready) { results.push({ id: c.id, action: "skip", reason: gate.reason }); continue; }
-
     inFlight.add(c.id);
     try {
-      const hash = await write(client, "review_complaint", [c.id]);
-      failures.delete(c.id);
-      triggered++;
-      results.push({ id: c.id, action: "review", hash });
+      if (readyForReview(c)) {
+        const hash = await write(client, "trigger_review", [c.id], feeWei);
+        failures.delete(c.id); triggered++;
+        results.push({ id: c.id, action: "trigger_review", hash, feeWei: feeWei.toString() });
+      } else if (readyForReconsideration(c)) {
+        const rid = (c as any).activeReconsiderationId;
+        if (!rid) { results.push({ id: c.id, action: "skip", reason: "no-active-reconsideration-id" }); continue; }
+        const hash = await write(client, "trigger_reconsideration_review", [rid], feeWei);
+        failures.delete(c.id); triggered++;
+        results.push({ id: c.id, action: "trigger_reconsideration_review", hash, feeWei: feeWei.toString() });
+      } else {
+        results.push({ id: c.id, action: "skip", reason: `status=${c.status}` });
+      }
     } catch (e: any) {
       failures.set(c.id, fails + 1);
       results.push({ id: c.id, action: "error", error: e?.message || String(e), failCount: fails + 1 });
-    } finally {
-      inFlight.delete(c.id);
-    }
+    } finally { inFlight.delete(c.id); }
   }
 
   return NextResponse.json({
-    ok: true,
-    keeper: keeperAddr,
-    queueSize: queue.length,
-    triggered,
-    elapsedMs: Date.now() - started,
-    results,
+    ok: true, keeper: keeperAddr, queueSize: queue.length, triggered,
+    elapsedMs: Date.now() - started, results,
   });
 }
