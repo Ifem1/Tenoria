@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useWallet, connectMetaMask } from "@/lib/wallet/store";
 import { shortAddr } from "@/lib/utils/ids";
 import { useIsKeeperOrOwner } from "@/lib/genlayer/hooks";
+import { LogoMark } from "@/components/ui/LogoMark";
 
 const OWNER = "0xE3A26A71b2B26aC623A1F1447D28afc6cac0Fb9c".toLowerCase();
 
@@ -24,7 +25,10 @@ export function TopNavigation() {
   return (
     <header className="border-b border-mist bg-cream">
       <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
-        <Link href="/" className="font-prata text-2xl text-aubergine tracking-wide">Tenoria</Link>
+        <Link href="/" className="flex items-center gap-2.5">
+          <LogoMark size={32} />
+          <span className="font-prata text-2xl text-aubergine tracking-wide">Tenoria</span>
+        </Link>
         <nav className="flex gap-6 text-sm">
           <Link href="/dashboard" className="text-aubergine hover:text-mauve">Dashboard</Link>
           <Link href="/open-complaint" className="text-aubergine hover:text-mauve">Open Complaint</Link>
