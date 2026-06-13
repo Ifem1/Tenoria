@@ -13,7 +13,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {SETUP_NOTICE}
         </div>
       )}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-8">{children}</main>
+      <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-8 animate-fadeIn">{children}</main>
       <footer className="border-t border-mist py-6 text-center text-xs text-walnut">
         Tenoria · Private tenant complaint arbitration on GenLayer Studionet
       </footer>

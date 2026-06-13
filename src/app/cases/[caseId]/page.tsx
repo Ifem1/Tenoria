@@ -53,7 +53,24 @@ export default function CaseDetail() {
 
   if (err) return <div className="mono text-sm text-dispute">{err}</div>;
   if (!address) return <QuietPanel><p className="text-sm">Connect your wallet to view this private case.</p></QuietPanel>;
-  if (!data) return <div className="mono text-xs text-walnut">Loading private case…</div>;
+  if (!data) return (
+    <div className="space-y-4 animate-fadeIn">
+      <div className="quiet-panel space-y-3">
+        <div className="skeleton h-3 w-24 rounded" />
+        <div className="skeleton h-6 w-64 rounded" />
+        <div className="skeleton h-3 w-40 rounded" />
+        <div className="skeleton h-8 w-full rounded mt-4" />
+      </div>
+      <div className="quiet-panel space-y-3">
+        <div className="skeleton h-3 w-32 rounded" />
+        <div className="skeleton h-16 w-full rounded" />
+      </div>
+      <div className="quiet-panel space-y-3">
+        <div className="skeleton h-3 w-28 rounded" />
+        <div className="skeleton h-12 w-full rounded" />
+      </div>
+    </div>
+  );
   if (!data.c) return <QuietPanel title="Case not found"><p className="text-sm">No case exists with this ID, or you don't have access.</p></QuietPanel>;
 
   const role = deriveCaseRole(data.c, address, data.isKeeperFlag, data.isOwner);
@@ -81,7 +98,7 @@ export default function CaseDetail() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fadeIn">
       <ConfidentialCaseHeader c={data.c} />
       <StatementPair c={data.c} response={data.resp} />
       <EvidenceTimeline evidence={data.ev} timeline={data.timeline} />

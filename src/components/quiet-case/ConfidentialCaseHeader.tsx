@@ -1,10 +1,11 @@
 import type { ComplaintCase } from "@/types";
 import { AccessBadge, MonoCaseId } from "@/components/ui/QuietPanel";
+import { CaseStatusStepper } from "@/components/ui/CaseStatusStepper";
 import { shortAddr } from "@/lib/utils/ids";
 
 export function ConfidentialCaseHeader({ c }: { c: ComplaintCase }) {
   return (
-    <header className="quiet-panel">
+    <header className="quiet-panel space-y-4 animate-fadeInUp">
       <div className="flex justify-between items-start flex-wrap gap-3">
         <div>
           <div className="mono text-xs uppercase tracking-widest text-walnut">Confidential Case</div>
@@ -13,10 +14,16 @@ export function ConfidentialCaseHeader({ c }: { c: ComplaintCase }) {
         </div>
         <div className="flex gap-2 flex-wrap items-start">
           <AccessBadge mode={c.visibilityMode} />
-          <span className="ruling-seal">{c.status}</span>
         </div>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-sm">
+
+      {/* Status progress stepper */}
+      <div className="border-t border-mist pt-3">
+        <div className="mono text-[10px] uppercase tracking-widest text-walnut mb-2">Case Progress</div>
+        <CaseStatusStepper status={c.status} />
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm border-t border-mist pt-3">
         <div><div className="mono text-[10px] uppercase text-walnut">Tenant</div><div className="mono">{shortAddr(c.tenantWallet)}</div></div>
         <div><div className="mono text-[10px] uppercase text-walnut">Landlord</div><div className="mono">{shortAddr(c.landlordWallet)}</div></div>
         <div><div className="mono text-[10px] uppercase text-walnut">Keeper</div><div className="mono">{shortAddr(c.assignedKeeper)}</div></div>
