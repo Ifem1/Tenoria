@@ -41,13 +41,18 @@ function extractStderr(tx) {
 
 function extractExecResult(tx) {
   try {
-    // result_name reflects the FINAL consensus outcome across all rounds — an
-    // earlier round's execution_result can be SUCCESS even though the transaction
-    // ultimately failed to reach consensus (e.g. MAJORITY_DISAGREE after rotation),
-    // so a disagreement outcome always overrides any stray per-round SUCCESS.
+    // result_name is the protocol-level consensus verdict and is the only reliable
+    // signal here: individual per-validator execution_result entries include nodes
+    // that got cancelled once quorum was already reached ("Validator execution
+    // cancelled after quorum", tagged execution_result=ERROR) even when the
+    // majority genuinely agreed on a valid result, so those must not be treated
+    // as the outcome. Trust result_name over any per-round/per-validator field.
     const resultName = tx?.result_name ? String(tx.result_name).toUpperCase() : "";
     if (resultName.includes("DISAGREE") || resultName.includes("TIMEOUT") || resultName === "UNDETERMINED") {
       return resultName;
+    }
+    if (resultName.includes("AGREE")) {
+      return "SUCCESS";
     }
     const lr = tx?.consensus_data?.leader_receipt;
     const arr = Array.isArray(lr) ? lr : (lr ? [lr] : []);
