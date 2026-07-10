@@ -41,10 +41,19 @@ function extractStderr(tx) {
 
 function extractExecResult(tx) {
   try {
+    // result_name reflects the FINAL consensus outcome across all rounds — an
+    // earlier round's execution_result can be SUCCESS even though the transaction
+    // ultimately failed to reach consensus (e.g. MAJORITY_DISAGREE after rotation),
+    // so a disagreement outcome always overrides any stray per-round SUCCESS.
+    const resultName = tx?.result_name ? String(tx.result_name).toUpperCase() : "";
+    if (resultName.includes("DISAGREE") || resultName.includes("TIMEOUT") || resultName === "UNDETERMINED") {
+      return resultName;
+    }
     const lr = tx?.consensus_data?.leader_receipt;
     const arr = Array.isArray(lr) ? lr : (lr ? [lr] : []);
-    for (const r of arr) {
-      const e = r?.execution_result || r?.result?.execution_result;
+    // Most recent round is authoritative — walk from the end.
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const e = arr[i]?.execution_result || arr[i]?.result?.execution_result;
       if (e) return String(e);
     }
     return null;
@@ -57,12 +66,12 @@ export async function callRead(client, functionName, args = []) {
   return client.readContract({ address: CONTRACT, functionName, args });
 }
 
-export async function callWrite(client, functionName, args = [], { attempts = 3, backoffMs = 5000, allowRevert = false } = {}) {
+export async function callWrite(client, functionName, args = [], { attempts = 3, backoffMs = 5000, allowRevert = false, value = 0n } = {}) {
   let lastErr = null;
   for (let i = 1; i <= attempts; i++) {
     try {
       const t0 = Date.now();
-      const hash = await client.writeContract({ address: CONTRACT, functionName, args, value: 0n });
+      const hash = await client.writeContract({ address: CONTRACT, functionName, args, value });
       await client.waitForTransactionReceipt({ hash, retries: 200, interval: 3000 });
       const tx = await client.getTransaction({ hash });
       const exec = extractExecResult(tx);

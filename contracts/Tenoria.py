@@ -512,6 +512,8 @@ class Tenoria(gl.Contract):
             '  "missing_records": ["short missing record if any"],\n'
             '  "required_next_steps": ["short practical next step"]\n'
             "}\n\n"
+            "Every field above must be a flat string or a flat list of strings — never a nested object. "
+            "Do not add any extra top-level keys beyond the ones listed. Do not rename any key.\n\n"
             "Allowed ruling: ACTIONABLE, PARTIALLY_ACTIONABLE, NEEDS_MORE_EVIDENCE, NOT_ACTIONABLE, LANDLORD_RESPONSE_REQUIRED, ESCALATE_TO_MEDIATION, URGENT_ESCALATION.\n"
             "Allowed bands: LOW, MEDIUM, HIGH. Credibility: WEAK, MODERATE, STRONG. Risk/urgency: LOW, MEDIUM, HIGH, CRITICAL.\n"
             "Allowed lease_support: STRONG, PARTIAL, WEAK, NONE, UNCLEAR. Evidence: STRONG, MODERATE, WEAK, INSUFFICIENT, CONFLICTING.\n"
@@ -562,7 +564,7 @@ class Tenoria(gl.Contract):
             "landlord_response_quality": llq,
             "reason_codes": self._clean_enum_list(parsed.get("reason_codes", []), ALLOWED_REASON_CODES, 5),
             "recommended_next_action": next_action,
-            "reasoning": self._clean_text_list(parsed.get("reasoning", []), 5, 260),
+            "reasoning": self._clean_text_list(parsed.get("reasoning", []), 5, 260) or ["Model did not return usable reasoning text for this ruling."],
             "missing_records": self._clean_text_list(parsed.get("missing_records", []), 5, 180),
             "required_next_steps": self._clean_text_list(parsed.get("required_next_steps", []), 5, 180),
         }
@@ -617,12 +619,15 @@ class Tenoria(gl.Contract):
                 "on actionability, credibility, urgency, lease support, evidence strength, and next steps."
             ),
             criteria=(
-                "The output must be strict JSON and must follow the requested schema. "
-                "Enums must use allowed values only. Reasoning must be evidence-based and must not invent facts. "
-                "It must not make legal conclusions or court orders. It must distinguish weak evidence from bad faith. "
-                "The judgement must be internally consistent; urgent escalation cannot pair with low risk. "
-                "Missing landlord response should be reflected as MISSING or LANDLORD_RESPONSE_REQUIRED where appropriate. "
-                "Evidence links marked UNREACHABLE_* or FETCH_FAILED in EVIDENCE_RESOURCE_CHECKS must not be treated as verified."
+                "The output has already been normalised into strict flat JSON with allowed enum values by the contract "
+                "before you see it, so do not disagree over formatting, key order, or exact wording of the reasoning text. "
+                "Judge only the substance: reasoning must be evidence-based and must not invent facts; it must not make "
+                "legal conclusions or court orders; it must distinguish weak evidence from bad faith; the judgement must "
+                "be internally consistent (urgent escalation cannot pair with low risk); missing landlord response should "
+                "be reflected as MISSING or LANDLORD_RESPONSE_REQUIRED where appropriate; evidence links marked "
+                "UNREACHABLE_* or FETCH_FAILED in EVIDENCE_RESOURCE_CHECKS must not be treated as verified. "
+                "Two outputs that reach the same substantive judgement in different words both satisfy these criteria — "
+                "only disagree if the ruling or bands are clearly unsupported by, or contradict, the case record."
             ),
         )
 
@@ -704,7 +709,9 @@ class Tenoria(gl.Contract):
             '  "final_recommendation": "REQUEST_BOTH_PARTIES_EVIDENCE",\n'
             '  "reasoning": ["short evidence-based reason"],\n'
             '  "changed_fields": ["short field changed, or empty"]\n'
-            "}\n"
+            "}\n\n"
+            "Every field above must be a flat string or a flat list of strings — never a nested object. "
+            "Do not add any extra top-level keys beyond the ones listed. Do not rename any key.\n"
         )
 
     def _normalise_reconsideration_review(self, parsed: dict) -> dict:
@@ -734,7 +741,7 @@ class Tenoria(gl.Contract):
             "confidence_band": conf,
             "reason_codes": self._clean_enum_list(parsed.get("reason_codes", []), ALLOWED_REASON_CODES, 5),
             "final_recommendation": rec,
-            "reasoning": self._clean_text_list(parsed.get("reasoning", []), 5, 260),
+            "reasoning": self._clean_text_list(parsed.get("reasoning", []), 5, 260) or ["Model did not return usable reasoning text for this decision."],
             "changed_fields": self._clean_text_list(parsed.get("changed_fields", []), 5, 160),
         }
 
@@ -768,9 +775,12 @@ class Tenoria(gl.Contract):
             leader_review,
             task="Review whether a tenant complaint reconsideration materially changes the original ruling.",
             criteria=(
-                "The output must be strict JSON with allowed enum values only for decision, ruling, bands and final recommendation. "
-                "Reasoning must be based on the original case, original review and new reconsideration record. "
-                "Do not invent facts and do not make legal orders."
+                "The output has already been normalised into strict flat JSON with allowed enum values by the contract "
+                "before you see it, so do not disagree over formatting, key order, or exact wording of the reasoning text. "
+                "Judge only the substance: reasoning must be based on the original case, original review, and new "
+                "reconsideration record; it must not invent facts or make legal orders. Two outputs that reach the same "
+                "substantive decision in different words both satisfy these criteria — only disagree if the decision or "
+                "ruling is clearly unsupported by, or contradicts, the record."
             ),
         )
         parsed = _extract_json(raw_output)
