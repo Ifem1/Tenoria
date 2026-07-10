@@ -2,19 +2,19 @@ const PANELS = [
   {
     title: "Tenant",
     bg: "statement-tenant",
-    can: ["Create a private complaint case", "Add evidence and timeline events", "View landlord response and ruling", "Request reconsideration"],
-    cannot: ["See other tenants' cases", "Trigger the GenLayer review directly", "Override the consensus ruling"],
+    can: ["Create a private complaint case", "Add evidence and timeline events", "View landlord response and ruling", "Trigger the GenLayer review once ready", "Request reconsideration"],
+    cannot: ["See other tenants' cases", "Override the consensus ruling"],
   },
   {
     title: "Landlord",
     bg: "statement-landlord",
-    can: ["View cases naming them", "Submit response and lease position", "Add evidence and repair history", "Request reconsideration"],
+    can: ["View cases naming them", "Submit response and lease position", "Add evidence and repair history", "Trigger the GenLayer review once ready", "Request reconsideration"],
     cannot: ["See unrelated complaints", "Force early dismissal", "Override the consensus ruling"],
   },
   {
     title: "Keeper",
     bg: "policy-note",
-    can: ["See assigned cases", "Verify readiness", "Trigger GenLayer review", "Escalate urgent rulings"],
+    can: ["See assigned cases", "Verify readiness", "Trigger GenLayer review on a party's behalf", "Escalate urgent rulings"],
     cannot: ["Write the ruling", "Decide credibility or actionability", "Invent evidence"],
   },
 ];
