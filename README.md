@@ -19,6 +19,8 @@ The reason Tenoria exists: housing complaints almost never have one obviously ri
 
 A normal smart contract can store complaint text, evidence hashes, and deadlines. It cannot decide whether a complaint is credible, whether a landlord's response addresses it, whether the lease supports the requested remedy, or whether the case is urgent and actionable. **GenLayer validators run an LLM-judged consensus review** that produces a structured, enum-only ruling — credibility, actionability, urgency, lease support, evidence strength, landlord-response quality, reason codes, and a recommended next action — all written on-chain. The contract calls `gl.nondet.exec_prompt` and certifies the leader's output through `gl.eq_principle.prompt_non_comparative`, so consensus forms around the **validity** of the judgement, not its exact wording.
 
+Before judging, the contract also does a **contract-side web check** on every evidence item that has a link: each validator independently fetches the URI via `gl.nondet.web.request` and records whether it actually resolves (`REACHABLE` / `UNREACHABLE_*` / `FETCH_FAILED`). That verification result — not the raw response body, to stay consensus-safe — is fed into the review prompt, so the ruling is grounded in whether cited evidence is real and reachable rather than trusting submitted text alone.
+
 ## Status flow
 
 ```

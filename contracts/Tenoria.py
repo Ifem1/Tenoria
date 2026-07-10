@@ -455,15 +455,44 @@ class Tenoria(gl.Contract):
         return cid
 
     # ----------------------------- GenLayer review -----------------------------
-    def _build_review_prompt(self, c: dict, resp: dict | None, evidence_arr: list, policy_arr: list, timeline: str) -> str:
+    def _verify_evidence_resources(self, evidence_arr: list) -> list:
+        # Contract-side check that submitted evidence links actually resolve, so the
+        # review is grounded in a verifiable resource rather than trusting submitted
+        # text alone. Runs inside the nondet leader/validator execution: each node
+        # fetches independently and only the derived REACHABLE/UNREACHABLE label
+        # (never raw response content) is used, which stays consensus-safe.
+        checked = []
+        fetch_budget = 5
+        for ev in evidence_arr:
+            uri = str(ev.get("uri") or "").strip()
+            entry = {"id": ev.get("id"), "uri": uri}
+            if not (uri.startswith("http://") or uri.startswith("https://")):
+                entry["resource_check"] = "NOT_A_URL"
+            elif fetch_budget <= 0:
+                entry["resource_check"] = "NOT_CHECKED_LIMIT"
+            else:
+                fetch_budget -= 1
+                try:
+                    resp = gl.nondet.web.request(uri, method="GET")
+                    code = int(getattr(resp, "status_code", 0) or 0)
+                    entry["resource_check"] = "REACHABLE" if 200 <= code < 400 else f"UNREACHABLE_{code}"
+                except Exception:
+                    entry["resource_check"] = "FETCH_FAILED"
+            checked.append(entry)
+        return checked
+
+    def _build_review_prompt(self, c: dict, resp: dict | None, evidence_arr: list, policy_arr: list, timeline: str, evidence_checks: list) -> str:
         return (
             "You are a neutral tenant complaint arbitrator for a private GenLayer case.\n"
             "Your task is not to apply a fixed rule. You must judge credibility, actionability, urgency, lease support, evidence strength, and next steps from the submitted records.\n"
             "Do not make legal conclusions or court orders. Do not invent missing facts. Distinguish weak evidence from bad faith.\n"
-            "If landlord response is missing, treat landlord_response_quality as MISSING. If urgent safety risk appears, escalate.\n\n"
+            "If landlord response is missing, treat landlord_response_quality as MISSING. If urgent safety risk appears, escalate.\n"
+            "EVIDENCE_RESOURCE_CHECKS shows whether each evidence link actually resolved when fetched by the network. "
+            "Evidence whose link is UNREACHABLE_* or FETCH_FAILED must be treated as weaker/unverified, not taken at face value.\n\n"
             "CASE_JSON:\n" + json.dumps(c) + "\n\n"
             "LANDLORD_RESPONSE_JSON:\n" + (json.dumps(resp) if resp else "MISSING") + "\n\n"
             "EVIDENCE_JSON_ARRAY:\n" + json.dumps(evidence_arr) + "\n\n"
+            "EVIDENCE_RESOURCE_CHECKS:\n" + json.dumps(evidence_checks) + "\n\n"
             "LEASE_POLICY_NOTES_JSON_ARRAY:\n" + json.dumps(policy_arr) + "\n\n"
             "TIMELINE_JSON_ARRAY:\n" + (timeline or "[]") + "\n\n"
             "Return STRICT JSON ONLY, no markdown. Use this exact shape:\n"
@@ -571,9 +600,10 @@ class Tenoria(gl.Contract):
 
         c["status"] = "UNDER_REVIEW"
         self._save_case(cid, c)
-        prompt = self._build_review_prompt(c, resp, evidence_arr, policy_arr, timeline)
 
         def leader_review() -> str:
+            evidence_checks = self._verify_evidence_resources(evidence_arr)
+            prompt = self._build_review_prompt(c, resp, evidence_arr, policy_arr, timeline, evidence_checks)
             raw = gl.nondet.exec_prompt(prompt, response_format="json")
             parsed = _extract_json(raw)
             normalised = self._normalise_review(parsed)
@@ -591,7 +621,8 @@ class Tenoria(gl.Contract):
                 "Enums must use allowed values only. Reasoning must be evidence-based and must not invent facts. "
                 "It must not make legal conclusions or court orders. It must distinguish weak evidence from bad faith. "
                 "The judgement must be internally consistent; urgent escalation cannot pair with low risk. "
-                "Missing landlord response should be reflected as MISSING or LANDLORD_RESPONSE_REQUIRED where appropriate."
+                "Missing landlord response should be reflected as MISSING or LANDLORD_RESPONSE_REQUIRED where appropriate. "
+                "Evidence links marked UNREACHABLE_* or FETCH_FAILED in EVIDENCE_RESOURCE_CHECKS must not be treated as verified."
             ),
         )
 

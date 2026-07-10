@@ -31,6 +31,7 @@ export default function CaseDetail() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [awaitingConsensus, setAwaitingConsensus] = useState(false);
 
   async function refresh() {
     if (!caseId || !address) return;
@@ -90,11 +91,12 @@ export default function CaseDetail() {
   const feeWeiStr = data.config?.review_fee_wei || "10000000000000000";
   const feeGen = (Number(BigInt(feeWeiStr)) / 1e18).toFixed(4);
 
-  async function run(label: string, fn: () => Promise<string>) {
+  async function run(label: string, fn: () => Promise<string>, isConsensus = false) {
     setBusy(true); setMsg(`${label}…`);
+    if (isConsensus) setAwaitingConsensus(true);
     try { const h = await fn(); setMsg(`${label}: ${h}`); await refresh(); }
     catch (e: any) { console.error(`[case] ${label}`, e); setMsg(`${label} failed: ${e?.message || e}`); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setAwaitingConsensus(false); }
   }
 
   return (
@@ -112,7 +114,7 @@ export default function CaseDetail() {
             </MediatorButton>
           )}
           {readyForReview && (
-            <KeeperButton disabled={busy} onClick={() => run("Trigger review", () => triggerReview(data.c!.id))}>
+            <KeeperButton disabled={busy} onClick={() => run("Trigger review", () => triggerReview(data.c!.id), true)}>
               TRIGGER REVIEW · {feeGen} GEN
             </KeeperButton>
           )}
@@ -127,6 +129,12 @@ export default function CaseDetail() {
           </span>
         </div>
         {msg && <div className="mono text-xs mt-3 break-all">{msg}</div>}
+        {awaitingConsensus && (
+          <div className="mono text-xs mt-3 flex items-center gap-2 text-teal">
+            <span className="inline-block h-3 w-3 rounded-full border-2 border-teal border-t-transparent animate-spin" />
+            Validators are reaching consensus on this review — this can take up to a minute or two. Don&apos;t close this tab.
+          </div>
+        )}
       </QuietPanel>
 
       <KeeperControlRow caseId={data.c.id} role={role} config={data.config} status={status} />

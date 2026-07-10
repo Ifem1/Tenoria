@@ -32,6 +32,19 @@ async function write(method: string, args: any[], payable = false): Promise<stri
     value,
   });
   console.log("[write] tx hash", method, hash);
+  // Consensus (including LLM-judged reviews) isn't done just because we have a hash —
+  // wait for the network to accept the transaction before callers refresh contract state.
+  try {
+    await client.waitForTransactionReceipt({
+      hash,
+      status: "ACCEPTED",
+      interval: 3000,
+      retries: 60,
+    });
+    console.log("[write] accepted", method, hash);
+  } catch (e) {
+    console.warn("[write] waitForTransactionReceipt failed/timed out", method, hash, e);
+  }
   return hash;
 }
 
