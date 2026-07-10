@@ -41,6 +41,8 @@ export type ComplaintCase = {
   status: CaseStatus;
   createdAt: number;
   updatedAt: number;
+  activeReconsiderationId?: string;
+  lastReconsiderationId?: string;
 };
 
 export type LandlordResponseStatus =

@@ -5,15 +5,16 @@ import Link from "next/link";
 import { useWallet } from "@/lib/wallet/store";
 import {
   getCase, getLandlordResponse, getCaseEvidence, getPolicyNotes,
-  getCaseTimeline, getConsensusReview, getOwner, isKeeper, getConfig,
+  getCaseTimeline, getConsensusReview, getReconsiderationReview, getOwner, isKeeper, getConfig,
 } from "@/lib/genlayer/read";
-import { triggerReview, markReadyForReview, finalizeCase } from "@/lib/genlayer/write";
-import type { ComplaintCase, LandlordResponse, CaseEvidence, PolicyNote, TimelineEvent, ConsensusReview, ProtocolConfig } from "@/types";
+import { triggerReview, triggerReconsiderationReview, markReadyForReview, finalizeCase } from "@/lib/genlayer/write";
+import type { ComplaintCase, LandlordResponse, CaseEvidence, PolicyNote, TimelineEvent, ConsensusReview, ReconsiderationReview, ProtocolConfig } from "@/types";
 import { ConfidentialCaseHeader } from "@/components/quiet-case/ConfidentialCaseHeader";
 import { StatementPair } from "@/components/quiet-case/StatementPair";
 import { EvidenceTimeline } from "@/components/evidence/EvidenceTimeline";
 import { PolicyNotesPanel } from "@/components/policy/PolicyNotesPanel";
 import { ConsensusReviewCard } from "@/components/consensus/ConsensusReviewCard";
+import { ReconsiderationReviewCard } from "@/components/consensus/ReconsiderationReviewCard";
 import { WhyGenLayerPanel } from "@/components/consensus/WhyGenLayerPanel";
 import { KeeperControlRow } from "@/components/keeper/KeeperControlRow";
 import { QuietPanel } from "@/components/ui/QuietPanel";
@@ -26,7 +27,8 @@ export default function CaseDetail() {
   const [data, setData] = useState<{
     c: ComplaintCase | null; resp: LandlordResponse | null;
     ev: CaseEvidence[]; notes: PolicyNote[]; timeline: TimelineEvent[];
-    review: ConsensusReview | null; isKeeperFlag: boolean; isOwner: boolean; config: ProtocolConfig | null;
+    review: ConsensusReview | null; reconsiderationReview: ReconsiderationReview | null;
+    isKeeperFlag: boolean; isOwner: boolean; config: ProtocolConfig | null;
   } | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -41,9 +43,11 @@ export default function CaseDetail() {
         getPolicyNotes(caseId, address), getCaseTimeline(caseId, address), getConsensusReview(caseId, address),
         getOwner(), isKeeper(address), getConfig(),
       ]);
+      const rid = c?.activeReconsiderationId || c?.lastReconsiderationId;
+      const reconsiderationReview = rid ? await getReconsiderationReview(rid, address) : null;
       setData({
         c, resp, ev: ev || [], notes: notes || [], timeline: timeline || [],
-        review, isKeeperFlag: !!kk,
+        review, reconsiderationReview, isKeeperFlag: !!kk,
         isOwner: !!(owner && address && owner.toLowerCase() === address.toLowerCase()),
         config,
       });
@@ -85,6 +89,8 @@ export default function CaseDetail() {
 
   const status = data.c.status as string;
   const readyForReview = status === "READY_FOR_REVIEW";
+  const readyForReconsiderationReview = status === "READY_FOR_RECONSIDERATION_REVIEW";
+  const activeReconsiderationId = data.c.activeReconsiderationId;
   const isReviewed = ["REVIEWED","ACTIONABLE","PARTIALLY_ACTIONABLE","NOT_ACTIONABLE","ESCALATED","URGENT_ESCALATION","RECONSIDERATION_REVIEWED","FINALIZED"].includes(status);
   const evidenceCount = data.ev.length;
   const canMarkReady = !!data.resp && evidenceCount > 0 && !readyForReview && !isReviewed && status !== "UNDER_REVIEW" && status !== "CANCELLED";
@@ -118,6 +124,14 @@ export default function CaseDetail() {
               TRIGGER REVIEW · {feeGen} GEN
             </KeeperButton>
           )}
+          {readyForReconsiderationReview && activeReconsiderationId && (
+            <KeeperButton
+              disabled={busy}
+              onClick={() => run("Trigger reconsideration review", () => triggerReconsiderationReview(activeReconsiderationId), true)}
+            >
+              TRIGGER RECONSIDERATION REVIEW · {feeGen} GEN
+            </KeeperButton>
+          )}
           {isReviewed && status !== "FINALIZED" && (
             <AppealButton disabled={busy} onClick={() => run("Finalize", () => finalizeCase(data.c!.id))}>
               FINALIZE CASE
@@ -139,6 +153,7 @@ export default function CaseDetail() {
 
       <KeeperControlRow caseId={data.c.id} role={role} config={data.config} status={status} />
       <ConsensusReviewCard review={data.review} />
+      <ReconsiderationReviewCard review={data.reconsiderationReview} />
       <WhyGenLayerPanel />
 
       <div className="flex gap-3 flex-wrap">
